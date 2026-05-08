@@ -47,6 +47,45 @@
 
         const getAvatar = (name) => `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=2563eb&color=fff&bold=true&rounded=true`;
 
+        // Utilitaire pour compresser les images avant stockage (Firestore a une limite de 1Mo par document)
+        const compressImage = (file, maxWidth = 800, maxHeight = 800) => {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = (event) => {
+                    const img = new Image();
+                    img.src = event.target.result;
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        let width = img.width;
+                        let height = img.height;
+
+                        if (width > height) {
+                            if (width > maxWidth) {
+                                height *= maxWidth / width;
+                                width = maxWidth;
+                            }
+                        } else {
+                            if (height > maxHeight) {
+                                width *= maxHeight / height;
+                                height = maxHeight;
+                            }
+                        }
+
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, width, height);
+                        
+                        // Compression JPEG à 0.7 de qualité pour réduire drastiquement le poids
+                        const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+                        resolve(dataUrl);
+                    };
+                };
+                reader.onerror = (error) => reject(error);
+            });
+        };
+
         const Icon = ({ name, size = 18, className = "" }) => {
             const icons = {
                 settings: <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2zM12 15a3 3 0 1 1 0-6 3 3 0 0 1 0 6z" />,
@@ -156,7 +195,7 @@
                         .onSnapshot(snap => {
                             if (!snap.empty) {
                                 const lastMsg = snap.docs[0].data();
-                                setLastMessages(prev => ({ ...prev, [friend.uid]: lastMsg.fileUrl ? "📷 Image" : lastMsg.text }));
+                                setLastMessages(prev => ({ ...prev, [friend.uid]: lastMsg.fileUrl ? "📷 Pièce jointe" : lastMsg.text }));
                                 if (lastMsg.senderId === friend.uid && activeChatRef.current?.uid !== friend.uid) {
                                     setNotifications(prev => ({ ...prev, [friend.uid]: (prev[friend.uid] || 0) + 1 }));
                                 }
@@ -207,27 +246,53 @@
                 if (!text && !fileData) return;
                 const chatId = [user.uid, activeChat.uid].sort().join('_');
                 updateTypingStatus(false);
-                await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('chats').doc(chatId).collection('messages').add({
-                    text: text || '',
-                    fileUrl: fileData?.url || null,
-                    fileType: fileData?.type || null,
-                    fileName: fileData?.name || null,
-                    senderId: user.uid,
-                    senderName: profile.displayName,
-                    timestamp: firebase.firestore.FieldValue.serverTimestamp()
-                });
-                setInputText('');
+                try {
+                    await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('chats').doc(chatId).collection('messages').add({
+                        text: text || '',
+                        fileUrl: fileData?.url || null,
+                        fileType: fileData?.type || null,
+                        fileName: fileData?.name || null,
+                        senderId: user.uid,
+                        senderName: profile.displayName,
+                        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                    setInputText('');
+                } catch (err) {
+                    console.error(err);
+                    alert("Erreur lors de l'envoi. Le fichier est peut-être trop volumineux.");
+                }
             };
 
-            const handleFileUpload = (e) => {
+            const handleFileUpload = async (e) => {
                 const file = e.target.files[0];
                 if (!file) return;
-                const reader = new FileReader();
-                reader.onload = (ev) => {
-                    const type = file.type.split('/')[0];
-                    sendMessage(null, { url: ev.target.result, type: type, name: file.name });
-                };
-                reader.readAsDataURL(file);
+
+                const type = file.type.split('/')[0];
+                
+                try {
+                    if (type === 'image') {
+                        const compressedUrl = await compressImage(file);
+                        // Vérification finale de la taille (800KB max pour sécurité Firestore)
+                        if (compressedUrl.length > 900000) {
+                            alert("L'image est encore trop lourde après compression. Essayez-en une autre.");
+                            return;
+                        }
+                        sendMessage(null, { url: compressedUrl, type: type, name: file.name });
+                    } else {
+                        // Pour les autres fichiers, on ne peut que limiter la taille
+                        if (file.size > 800000) {
+                            alert("Ce type de fichier est limité à 800 Ko (limite technique du cloud Onyx).");
+                            return;
+                        }
+                        const reader = new FileReader();
+                        reader.onload = (ev) => {
+                            sendMessage(null, { url: ev.target.result, type: type, name: file.name });
+                        };
+                        reader.readAsDataURL(file);
+                    }
+                } catch (err) {
+                    alert("Erreur lors du traitement du fichier.");
+                }
             };
 
             const downloadFile = (url, name) => {
@@ -258,7 +323,7 @@
                 <div className="h-screen bg-slate-950 flex items-center justify-center p-4">
                     <div className="bg-slate-900 border border-slate-800 p-8 rounded-3xl w-full max-w-md text-center fade-in">
                         <div className="flex justify-center mb-6"><LogoPlaceholder className="w-20 h-20" /></div>
-                        <h1 className="text-3xl font-extrabold text-white mb-8 italic uppercase tracking-tighter tracking-widest">ONYX CHAT</h1>
+                        <h1 className="text-3xl font-extrabold text-white mb-8 italic uppercase tracking-widest">ONYX CHAT</h1>
                         <form onSubmit={handleAuth} className="space-y-5 text-left">
                             {authError && <div className="bg-red-500/10 border border-red-500/50 p-3 rounded-xl text-red-500 text-xs font-bold">{authError}</div>}
                             <input type="email" required placeholder="Email" className="w-full bg-slate-800 border border-slate-700 p-3.5 rounded-xl text-white outline-none focus:border-blue-500" value={email} onChange={e => setEmail(e.target.value)} />
@@ -292,11 +357,11 @@
                                     {incomingRequests.map(req => (
                                         <div key={req.id} className="bg-slate-900 border border-slate-800 p-3 rounded-2xl flex items-center justify-between gap-2">
                                             <div className="flex items-center gap-2 overflow-hidden">
-                                                <img src={req.fromPhoto || getAvatar(req.fromName)} className="w-8 h-8 rounded-lg bg-slate-800 shrink-0" />
+                                                <img src={req.fromPhoto || getAvatar(req.fromName)} className="w-8 h-8 rounded-lg bg-slate-800 shrink-0 object-cover" />
                                                 <p className="text-[10px] font-bold truncate">{req.fromName}</p>
                                             </div>
                                             <div className="flex gap-1">
-                                                <button onClick={() => respondToRequest(req, true)} className="p-2 bg-green-500/20 text-green-500 rounded-lg"><Icon name="x" size={12} className="rotate-45"/></button>
+                                                <button onClick={() => respondToRequest(req, true)} className="p-2 bg-green-500/20 text-green-500 rounded-lg"><Icon name="plus" size={12}/></button>
                                                 <button onClick={() => respondToRequest(req, false)} className="p-2 bg-red-500/20 text-red-500 rounded-lg"><Icon name="x" size={12}/></button>
                                             </div>
                                         </div>
@@ -382,7 +447,7 @@
                                             <div className={`max-w-[85%] sm:max-w-[70%] flex flex-col gap-1 ${m.senderId === user.uid ? 'items-end' : 'items-start'}`}>
                                                 <div className={`p-4 rounded-3xl text-sm shadow-xl ${m.senderId === user.uid ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-slate-900 border border-slate-800 text-slate-200 rounded-tl-none'}`}>
                                                     {m.fileUrl && (
-                                                        <div className="mb-3 relative group">
+                                                        <div className="mb-3 relative group overflow-hidden rounded-2xl">
                                                             {m.fileType === 'image' ? (
                                                                 <img src={m.fileUrl} className="max-w-full rounded-2xl border border-white/10" alt="Envoyé" />
                                                             ) : m.fileType === 'video' ? (
@@ -395,14 +460,14 @@
                                                             )}
                                                             <button 
                                                                 onClick={() => downloadFile(m.fileUrl, m.fileName)}
-                                                                className="absolute bottom-2 right-2 p-2 bg-black/60 backdrop-blur text-white rounded-xl opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
+                                                                className="absolute bottom-2 right-2 p-2.5 bg-black/70 backdrop-blur text-white rounded-xl opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
                                                                 title="Télécharger"
                                                             >
                                                                 <Icon name="download" size={16} />
                                                             </button>
                                                         </div>
                                                     )}
-                                                    {m.text && <p className="leading-relaxed">{m.text}</p>}
+                                                    {m.text && <p className="leading-relaxed break-words">{m.text}</p>}
                                                 </div>
                                                 <span className="text-[8px] text-slate-600 font-bold px-2 uppercase">{m.senderName}</span>
                                             </div>
@@ -434,7 +499,7 @@
                                         />
                                         <button 
                                             type="submit" 
-                                            disabled={!inputText.trim()}
+                                            disabled={!inputText.trim() && !loading}
                                             className={`w-14 flex items-center justify-center rounded-2xl transition-all shadow-xl shadow-blue-900/20 ${inputText.trim() ? 'bg-blue-600 text-white hover:bg-blue-500' : 'bg-slate-800 text-slate-600'}`}
                                         >
                                             <Icon name="send" size={22}/>
@@ -466,15 +531,16 @@
                                                 <img src={profile.photoURL || getAvatar(profile.displayName)} className="w-full h-full object-cover" />
                                             </div>
                                             <div className="absolute inset-0 flex items-center justify-center bg-black/60 rounded-[2.5rem] opacity-0 group-hover:opacity-100 transition-all text-[10px] font-black uppercase tracking-widest text-white">Changer photo</div>
-                                            <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={(e) => {
+                                            <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={async (e) => {
                                                 const file = e.target.files[0];
                                                 if (file) {
-                                                    const reader = new FileReader();
-                                                    reader.onload = (ev) => {
+                                                    try {
+                                                        const compressedUrl = await compressImage(file, 400, 400); // Compression plus forte pour le profil
                                                         const userRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('profiles').doc(user.uid);
-                                                        userRef.update({ photoURL: ev.target.result });
-                                                    };
-                                                    reader.readAsDataURL(file);
+                                                        await userRef.update({ photoURL: compressedUrl });
+                                                    } catch (err) {
+                                                        alert("Erreur lors de la mise à jour de la photo.");
+                                                    }
                                                 }
                                             }} />
                                         </div>
