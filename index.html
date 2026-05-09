@@ -1,708 +1,748 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ONYX CHAT</title>
-    <!-- Manifest pour permettre l'installation PWA -->
-    <link rel="manifest" href="data:application/manifest+json,{'name':'Onyx Chat','short_name':'Onyx','start_url':'.','display':'standalone','background_color':'#020617','theme_color':'#2563eb'}">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap');
-        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #020617; }
-        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 10px; }
-        .fade-in { animation: fadeIn 0.3s ease-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        .reaction-pop { animation: pop 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
-        @keyframes pop { from { transform: scale(0); } to { transform: scale(1); } }
-        
-        .glow-button {
-            box-shadow: 0 0 15px rgba(37, 99, 235, 0.3);
-            animation: pulse-glow 2s infinite;
-        }
-        @keyframes pulse-glow {
-            0% { box-shadow: 0 0 5px rgba(37, 99, 235, 0.2); }
-            50% { box-shadow: 0 0 15px rgba(37, 99, 235, 0.5); }
-            100% { box-shadow: 0 0 5px rgba(37, 99, 235, 0.2); }
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ONYX CHAT</title>
+
+<link rel="manifest" href="data:application/manifest+json,{'name':'Onyx Chat','short_name':'Onyx','start_url':'.','display':'standalone','background_color':'#020617','theme_color':'#2563eb'}">
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap');
+
+body{
+font-family:'Plus Jakarta Sans',sans-serif;
+background:#020617;
+}
+
+.custom-scrollbar::-webkit-scrollbar{
+width:4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb{
+background:#1e293b;
+border-radius:10px;
+}
+
+.fade-in{
+animation:fadeIn .3s ease-out;
+}
+
+@keyframes fadeIn{
+from{
+opacity:0;
+transform:translateY(10px);
+}
+to{
+opacity:1;
+transform:translateY(0);
+}
+}
+
+.reaction-pop{
+animation:pop .2s cubic-bezier(0.175,0.885,0.32,1.275);
+}
+
+@keyframes pop{
+from{
+transform:scale(0);
+}
+to{
+transform:scale(1);
+}
+}
+</style>
 </head>
+
 <body class="text-slate-200">
-    <div id="root"></div>
+<div id="root"></div>
 
-    <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
+<script type="text/babel">
 
-        const firebaseConfig = {
-            apiKey: "AIzaSyCkiMirg--YtJMCENWm6Ba4qBn7XY55qrQ",
-            authDomain: "onyx-chat-by-rijoul.firebaseapp.com",
-            projectId: "onyx-chat-by-rijoul",
-            storageBucket: "onyx-chat-by-rijoul.firebasestorage.app",
-            messagingSenderId: "699855199393",
-            appId: "1:699855199393:web:0b454be9733e3853ada4e0"
-        };
+const {useState,useEffect,useRef}=React;
 
-        firebase.initializeApp(firebaseConfig);
-        const auth = firebase.auth();
-        const db = firebase.firestore();
-        const appId = 'onyx-pro-chat';
+const firebaseConfig={
+apiKey:"AIzaSyCkiMirg--YtJMCENWm6Ba4qBn7XY55qrQ",
+authDomain:"onyx-chat-by-rijoul.firebaseapp.com",
+projectId:"onyx-chat-by-rijoul",
+storageBucket:"onyx-chat-by-rijoul.firebasestorage.app",
+messagingSenderId:"699855199393",
+appId:"1:699855199393:web:0b454be9733e3853ada4e0"
+};
 
-        const EMOJIS = ['❤️', '😂', '👍', '🔥', '😮'];
+firebase.initializeApp(firebaseConfig);
 
-        const getAvatar = (name) => `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'User')}&background=2563eb&color=fff&bold=true&rounded=true`;
+const auth=firebase.auth();
+const db=firebase.firestore();
 
-        const compressImage = (file, maxWidth = 800, maxHeight = 800) => {
-            return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.readAsDataURL(file);
-                reader.onload = (event) => {
-                    const img = new Image();
-                    img.src = event.target.result;
-                    img.onload = () => {
-                        const canvas = document.createElement('canvas');
-                        let width = img.width;
-                        let height = img.height;
-                        if (width > height) {
-                            if (width > maxWidth) { height *= maxWidth / width; width = maxWidth; }
-                        } else {
-                            if (height > maxHeight) { width *= maxHeight / height; height = maxHeight; }
-                        }
-                        canvas.width = width;
-                        canvas.height = height;
-                        const ctx = canvas.getContext('2d');
-                        ctx.drawImage(img, 0, 0, width, height);
-                        const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
-                        resolve(dataUrl);
-                    };
-                };
-                reader.onerror = (error) => reject(error);
-            });
-        };
+const appId='onyx-pro-chat';
 
-        const Icon = ({ name, size = 18, className = "" }) => {
-            const icons = {
-                settings: <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2zM12 15a3 3 0 1 1 0-6 3 3 0 0 1 0 6z" />,
-                logout: <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />,
-                userplus: <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 7a4 4 0 1 0 0-8 4 4 0 0 0 0 8M19 8v6M22 11h-6" />,
-                copy: <React.Fragment><rect width="14" height="14" x="8" y="8" rx="2" ry="2" /><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" /></React.Fragment>,
-                arrowleft: <path d="M19 12H5M12 19l-7-7 7-7" />,
-                send: <React.Fragment><path d="m22 2-7 20-4-9-9-4Z" /><path d="M22 2 11 13" /></React.Fragment>,
-                plus: <path d="M12 5v14M5 12h14" />,
-                download: <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />,
-                file: <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6" />,
-                trash: <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6" />,
-                x: <path d="M18 6 6 18M6 6l12 12" />,
-                share: <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8M16 6l-4-4-4 4M12 2v13" />,
-                smartphone: (
-                    <React.Fragment>
-                        <rect width="14" height="20" x="5" y="2" rx="2" ry="2" />
-                        <path d="M12 18h.01" />
-                    </React.Fragment>
-                ),
-                smile: (
-                    <React.Fragment>
-                        <circle cx="12" cy="12" r="10" />
-                        <path d="M8 14s1.5 2 4 2 4-2 4-2" />
-                        <line x1="9" y1="9" x2="9.01" y2="9" />
-                        <line x1="15" y1="9" x2="15.01" y2="9" />
-                    </React.Fragment>
-                )
-            };
-            const key = name.toLowerCase();
-            return (
-                <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
-                    {icons[key] || icons['x']}
-                </svg>
-            );
-        };
+const EMOJIS=['❤️','😂','👍','🔥','😮'];
 
-        const LogoPlaceholder = ({ className = "w-12 h-12" }) => (
-            <div className={`${className} bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-900/20`}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-2/3 h-2/3 text-white">
-                    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-            </div>
-        );
+const getAvatar=(name)=>
+`https://ui-avatars.com/api/?name=${encodeURIComponent(name||'User')}&background=2563eb&color=fff&bold=true&rounded=true`;
 
-        function App() {
-            const [user, setUser] = useState(null);
-            const [profile, setProfile] = useState({ displayName: '', photoURL: '' });
-            const [loading, setLoading] = useState(true);
-            const [email, setEmail] = useState('');
-            const [password, setPassword] = useState('');
-            const [isRegistering, setIsRegistering] = useState(false);
-            const [authError, setAuthError] = useState('');
-            
-            const [friends, setFriends] = useState([]);
-            const [friendProfiles, setFriendProfiles] = useState({});
-            const [incomingRequests, setIncomingRequests] = useState([]);
-            const [activeChat, setActiveChat] = useState(null);
-            const [messages, setMessages] = useState([]);
-            const [inputText, setInputText] = useState('');
-            const [view, setView] = useState('list');
-            const [showSettings, setShowSettings] = useState(false);
-            const [friendIdInput, setFriendIdInput] = useState('');
-            
-            const [lastMessages, setLastMessages] = useState({});
-            const [isTypingMap, setIsTypingMap] = useState({});
-            const [notifications, setNotifications] = useState({}); 
+function App(){
 
-            const [deferredPrompt, setDeferredPrompt] = useState(null);
-            const [isInstallable, setIsInstallable] = useState(false);
+const [user,setUser]=useState(null);
+const [profile,setProfile]=useState({});
+const [loading,setLoading]=useState(true);
 
-            const fileInputRef = useRef(null);
-            const chatFileRef = useRef(null);
-            const messagesEndRef = useRef(null);
-            const activeChatRef = useRef(null);
-            const typingTimeoutRef = useRef(null);
+const [email,setEmail]=useState('');
+const [password,setPassword]=useState('');
+const [isRegistering,setIsRegistering]=useState(false);
 
-            useEffect(() => {
-                const handleBeforeInstallPrompt = (e) => {
-                    e.preventDefault();
-                    setDeferredPrompt(e);
-                    setIsInstallable(true);
-                };
-                window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+const [friends,setFriends]=useState([]);
+const [friendProfiles,setFriendProfiles]=useState({});
+const [activeChat,setActiveChat]=useState(null);
 
-                const handleAppInstalled = () => {
-                    setIsInstallable(false);
-                    setDeferredPrompt(null);
-                };
-                window.addEventListener('appinstalled', handleAppInstalled);
+const [messages,setMessages]=useState([]);
+const [inputText,setInputText]=useState('');
 
-                return () => {
-                    window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-                    window.removeEventListener('appinstalled', handleAppInstalled);
-                };
-            }, []);
+const [lastMessages,setLastMessages]=useState({});
+const [isTypingMap,setIsTypingMap]=useState({});
 
-            useEffect(() => {
-                activeChatRef.current = activeChat;
-                if (activeChat) {
-                    setNotifications(prev => {
-                        const next = { ...prev };
-                        delete next[activeChat.uid];
-                        return next;
-                    });
-                }
-            }, [activeChat]);
+const [onlineUsers,setOnlineUsers]=useState({});
+const [onlineCount,setOnlineCount]=useState(0);
 
-            useEffect(() => {
-                const unsubscribe = auth.onAuthStateChanged(async (u) => {
-                    if (u) {
-                        setUser(u);
-                        const userRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('profiles').doc(u.uid);
-                        userRef.onSnapshot(doc => {
-                            if (doc.exists) setProfile(doc.data());
-                            else {
-                                const newProfile = { uid: u.uid, displayName: u.email.split('@')[0], photoURL: getAvatar(u.email.split('@')[0]), createdAt: firebase.firestore.FieldValue.serverTimestamp() };
-                                userRef.set(newProfile);
-                                setProfile(newProfile);
-                            }
-                        });
-                    } else setUser(null);
-                    setLoading(false);
-                });
-                return () => unsubscribe();
-            }, []);
+const messagesEndRef=useRef(null);
 
-            useEffect(() => {
-                if (!user || friends.length === 0) return;
-                const unsubs = friends.map(friend => {
-                    return db.collection('artifacts').doc(appId).collection('public').doc('data').collection('profiles').doc(friend.uid)
-                        .onSnapshot(doc => {
-                            if (doc.exists) {
-                                setFriendProfiles(prev => ({ ...prev, [friend.uid]: doc.data() }));
-                            }
-                        });
-                });
-                return () => unsubs.forEach(unsub => unsub());
-            }, [friends, user]);
+useEffect(()=>{
 
-            useEffect(() => {
-                if (!user) return;
-                const unsubFriends = db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('contacts').doc('list')
-                    .onSnapshot(doc => { if (doc.exists) setFriends(doc.data().friends || []); else setFriends([]); });
-                
-                const unsubRequests = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('friendRequests')
-                    .where('toId', '==', user.uid)
-                    .where('status', '==', 'pending')
-                    .onSnapshot(snap => setIncomingRequests(snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
+const unsubscribe=auth.onAuthStateChanged(async(u)=>{
 
-                return () => { unsubFriends(); unsubRequests(); };
-            }, [user]);
+if(u){
 
-            useEffect(() => {
-                if (!user || friends.length === 0) return;
-                const unsubs = friends.map(friend => {
-                    const chatId = [user.uid, friend.uid].sort().join('_');
-                    const unsubMsg = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('chats').doc(chatId).collection('messages')
-                        .orderBy('timestamp', 'desc').limit(1)
-                        .onSnapshot(snap => {
-                            if (!snap.empty) {
-                                const lastMsg = snap.docs[0].data();
-                                setLastMessages(prev => ({ ...prev, [friend.uid]: lastMsg.fileUrl ? "📷 Pièce jointe" : lastMsg.text }));
-                                if (lastMsg.senderId === friend.uid && activeChatRef.current?.uid !== friend.uid) {
-                                    setNotifications(prev => ({ ...prev, [friend.uid]: (prev[friend.uid] || 0) + 1 }));
-                                }
-                            } else {
-                                setLastMessages(prev => ({ ...prev, [friend.uid]: "Aucun message" }));
-                            }
-                        });
-                    const unsubTyping = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('chats').doc(chatId)
-                        .onSnapshot(doc => {
-                            if (doc.exists) {
-                                const data = doc.data();
-                                setIsTypingMap(prev => ({ ...prev, [friend.uid]: data.isTyping?.[friend.uid] || false }));
-                            }
-                        });
-                    return () => { unsubMsg(); unsubTyping(); };
-                });
-                return () => unsubs.forEach(unsub => unsub());
-            }, [user, friends]);
+setUser(u);
 
-            useEffect(() => {
-                if (!user || !activeChat) return;
-                const chatId = [user.uid, activeChat.uid].sort().join('_');
-                const unsubscribe = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('chats').doc(chatId).collection('messages')
-                    .orderBy('timestamp', 'asc')
-                    .onSnapshot(snap => {
-                        setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-                        setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
-                    });
-                return () => unsubscribe();
-            }, [user, activeChat]);
+const userRef=db
+.collection('artifacts')
+.doc(appId)
+.collection('public')
+.doc('data')
+.collection('profiles')
+.doc(u.uid);
 
-            const handleAuth = async (e) => {
-                e.preventDefault();
-                setAuthError('');
-                try {
-                    if (isRegistering) await auth.createUserWithEmailAndPassword(email, password);
-                    else await auth.signInWithEmailAndPassword(email, password);
-                } catch (err) { setAuthError(err.message); }
-            };
+userRef.onSnapshot(doc=>{
 
-            const updateTypingStatus = (isTyping) => {
-                if (!activeChat) return;
-                const chatId = [user.uid, activeChat.uid].sort().join('_');
-                db.collection('artifacts').doc(appId).collection('public').doc('data').collection('chats').doc(chatId).set({
-                    isTyping: { [user.uid]: isTyping }
-                }, { merge: true });
-            };
+if(doc.exists){
 
-            const sendMessage = async (text = null, fileData = null) => {
-                if (!text && !fileData) return;
-                const chatId = [user.uid, activeChat.uid].sort().join('_');
-                updateTypingStatus(false);
-                try {
-                    await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('chats').doc(chatId).collection('messages').add({
-                        text: text || '',
-                        fileUrl: fileData?.url || null,
-                        fileType: fileData?.type || null,
-                        fileName: fileData?.name || null,
-                        senderId: user.uid,
-                        senderName: profile.displayName,
-                        reactions: {},
-                        timestamp: firebase.firestore.FieldValue.serverTimestamp()
-                    });
-                    setInputText('');
-                } catch (err) { console.error(err); }
-            };
+setProfile(doc.data());
 
-            const deleteMessage = async (msgId) => {
-                const chatId = [user.uid, activeChat.uid].sort().join('_');
-                await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('chats').doc(chatId).collection('messages').doc(msgId).delete();
-            };
+}else{
 
-            const reactToMessage = async (msgId, emoji) => {
-                const chatId = [user.uid, activeChat.uid].sort().join('_');
-                const msgRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('chats').doc(chatId).collection('messages').doc(msgId);
-                const msgDoc = await msgRef.get();
-                const currentReactions = msgDoc.data().reactions || {};
-                
-                if (currentReactions[user.uid] === emoji) delete currentReactions[user.uid];
-                else currentReactions[user.uid] = emoji;
+const p={
+uid:u.uid,
+displayName:u.email.split('@')[0],
+photoURL:getAvatar(u.email.split('@')[0])
+};
 
-                await msgRef.update({ reactions: currentReactions });
-            };
+userRef.set(p);
+setProfile(p);
 
-            const handleFileUpload = async (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
-                const type = file.type.split('/')[0];
-                try {
-                    if (type === 'image') {
-                        const compressedUrl = await compressImage(file);
-                        sendMessage(null, { url: compressedUrl, type: type, name: file.name });
-                    } else {
-                        const reader = new FileReader();
-                        reader.onload = (ev) => sendMessage(null, { url: ev.target.result, type: type, name: file.name });
-                        reader.readAsDataURL(file);
-                    }
-                } catch (err) { console.error(err); }
-            };
+}
 
-            const downloadFile = (url, name) => {
-                const link = document.createElement('a');
-                link.href = url;
-                link.download = name || 'onyx-file';
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-            };
+});
 
-            const respondToRequest = async (request, accept) => {
-                const batch = db.batch();
-                const requestRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('friendRequests').doc(request.id);
-                if (accept) {
-                    const myContactsRef = db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('contacts').doc('list');
-                    const friendContactsRef = db.collection('artifacts').doc(appId).collection('users').doc(request.fromId).collection('contacts').doc('list');
-                    batch.set(myContactsRef, { friends: firebase.firestore.FieldValue.arrayUnion({ uid: request.fromId }) }, { merge: true });
-                    batch.set(friendContactsRef, { friends: firebase.firestore.FieldValue.arrayUnion({ uid: user.uid }) }, { merge: true });
-                    batch.update(requestRef, { status: 'accepted' });
-                } else batch.update(requestRef, { status: 'rejected' });
-                await batch.commit();
-            };
+}else{
 
-            const shareApp = async () => {
-                const shareData = {
-                    title: 'ONYX CHAT',
-                    text: 'Rejoins-moi sur ONYX CHAT, la messagerie sécurisée nouvelle génération !',
-                    url: window.location.href
-                };
+setUser(null);
 
-                try {
-                    if (navigator.share) {
-                        await navigator.share(shareData);
-                    } else {
-                        await navigator.clipboard.writeText(window.location.href);
-                        alert("Lien copié dans le presse-papier !");
-                    }
-                } catch (err) {
-                    console.log("Erreur partage:", err);
-                }
-            };
+}
 
-            const installApp = async () => {
-                if (!deferredPrompt) return;
-                deferredPrompt.prompt();
-                const { outcome } = await deferredPrompt.userChoice;
-                if (outcome === 'accepted') {
-                    setIsInstallable(false);
-                    setDeferredPrompt(null);
-                }
-            };
+setLoading(false);
 
-            if (loading) return null;
+});
 
-            if (!user) return (
-                <div className="h-screen bg-slate-950 flex items-center justify-center p-4">
-                    <div className="bg-slate-900 border border-slate-800 p-8 rounded-3xl w-full max-w-md text-center fade-in">
-                        <div className="flex justify-center mb-6"><LogoPlaceholder className="w-20 h-20" /></div>
-                        <h1 className="text-3xl font-extrabold text-white mb-8 italic uppercase tracking-widest">ONYX CHAT</h1>
-                        <form onSubmit={handleAuth} className="space-y-5 text-left">
-                            {authError && <div className="bg-red-500/10 border border-red-500/50 p-3 rounded-xl text-red-500 text-xs font-bold">{authError}</div>}
-                            <input type="email" required placeholder="Email" className="w-full bg-slate-800 border border-slate-700 p-3.5 rounded-xl text-white outline-none focus:border-blue-500" value={email} onChange={e => setEmail(e.target.value)} />
-                            <input type="password" required placeholder="Mot de passe" className="w-full bg-slate-800 border border-slate-700 p-3.5 rounded-xl text-white outline-none focus:border-blue-500" value={password} onChange={e => setPassword(e.target.value)} />
-                            <button type="submit" className="w-full bg-blue-600 p-4 rounded-xl font-bold text-white shadow-lg hover:bg-blue-500 transition-all uppercase tracking-widest">
-                                {isRegistering ? "S'inscrire" : "Se connecter"}
-                            </button>
-                            <button type="button" onClick={() => setIsRegistering(!isRegistering)} className="w-full text-slate-500 text-xs font-bold uppercase tracking-tighter">
-                                {isRegistering ? "Nouveau ? Créer un compte" : "Déjà membre ? Connexion"}
-                            </button>
-                        </form>
-                    </div>
-                </div>
-            );
+return ()=>unsubscribe();
 
-            return (
-                <div className="h-screen flex bg-slate-950 text-white overflow-hidden">
-                    <aside className={`w-full md:w-80 border-r border-slate-800 flex flex-col ${view === 'chat' ? 'hidden md:flex' : 'flex'}`}>
-                        <div className="p-5 flex justify-between items-center border-b border-slate-800 bg-slate-900/30">
-                            <div className="flex items-center gap-3">
-                                <LogoPlaceholder className="w-8 h-8" />
-                                <h2 className="font-extrabold text-lg italic uppercase tracking-widest">ONYX CHAT</h2>
-                            </div>
-                            <button onClick={() => setShowSettings(true)} className="text-slate-500 hover:text-white p-2 hover:bg-slate-800 rounded-lg transition-all"><Icon name="settings" /></button>
-                        </div>
+},[]);
 
-                        <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
-                            <div className="mb-6 grid grid-cols-2 gap-2">
-                                <button onClick={shareApp} className="flex flex-col items-center justify-center p-4 bg-slate-900 border border-slate-800 rounded-2xl hover:bg-slate-800 transition-all gap-2 group">
-                                    <Icon name="share" className="text-blue-500 group-hover:scale-110 transition-transform" />
-                                    <span className="text-[10px] font-black uppercase tracking-widest">Partager</span>
-                                </button>
-                                
-                                {isInstallable ? (
-                                    <button onClick={installApp} className="flex flex-col items-center justify-center p-4 bg-blue-600/10 border border-blue-600/30 rounded-2xl hover:bg-blue-600/20 transition-all gap-2 glow-button group">
-                                        <Icon name="smartphone" className="text-blue-400 group-hover:scale-110 transition-transform" />
-                                        <span className="text-[10px] font-black uppercase tracking-widest">Installer</span>
-                                    </button>
-                                ) : (
-                                    <div className="flex flex-col items-center justify-center p-4 bg-slate-950/50 border border-slate-900 rounded-2xl opacity-40 gap-2">
-                                        <Icon name="smartphone" />
-                                        <span className="text-[10px] font-black uppercase tracking-widest">Installé</span>
-                                    </div>
-                                )}
-                            </div>
 
-                            {incomingRequests.length > 0 && (
-                                <div className="mb-6 space-y-2">
-                                    <p className="text-[10px] text-yellow-500 uppercase font-black px-1 tracking-widest">Demandes</p>
-                                    {incomingRequests.map(req => (
-                                        <div key={req.id} className="bg-slate-900 border border-slate-800 p-3 rounded-2xl flex items-center justify-between gap-2">
-                                            <div className="flex items-center gap-2 overflow-hidden">
-                                                <img src={req.fromPhoto || getAvatar(req.fromName)} className="w-8 h-8 rounded-lg bg-slate-800 shrink-0 object-cover" />
-                                                <p className="text-[10px] font-bold truncate">{req.fromName}</p>
-                                            </div>
-                                            <div className="flex gap-1">
-                                                <button onClick={() => respondToRequest(req, true)} className="p-2 bg-green-500/20 text-green-500 rounded-lg"><Icon name="plus" size={12}/></button>
-                                                <button onClick={() => respondToRequest(req, false)} className="p-2 bg-red-500/20 text-red-500 rounded-lg"><Icon name="x" size={12}/></button>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
 
-                            <div className="mb-6">
-                                <p className="text-[10px] text-slate-500 uppercase font-bold mb-2 px-1 tracking-widest">Ajouter via ID</p>
-                                <div className="flex gap-2">
-                                    <input placeholder="ID du contact..." className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-[10px] outline-none" value={friendIdInput} onChange={e => setFriendIdInput(e.target.value)} />
-                                    <button onClick={async () => {
-                                        if (!friendIdInput || friendIdInput === user.uid) return;
-                                        const profSnap = await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('profiles').doc(friendIdInput).get();
-                                        if (!profSnap.exists) { alert("ID introuvable"); return; }
-                                        await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('friendRequests').add({
-                                            fromId: user.uid, fromName: profile.displayName, fromPhoto: profile.photoURL,
-                                            toId: friendIdInput, status: 'pending', timestamp: firebase.firestore.FieldValue.serverTimestamp()
-                                        });
-                                        alert("Demande envoyée !");
-                                        setFriendIdInput('');
-                                    }} className="bg-blue-600 px-3 rounded-xl hover:bg-blue-500"><Icon name="userplus" size={14}/></button>
-                                </div>
-                            </div>
+useEffect(()=>{
 
-                            <div className="space-y-1">
-                                <p className="text-[10px] text-slate-500 uppercase font-bold mb-2 px-1 tracking-widest">Conversations</p>
-                                {friends.map(f => {
-                                    const friendData = friendProfiles[f.uid] || {};
-                                    return (
-                                        <div key={f.uid} onClick={() => { setActiveChat({uid: f.uid, ...friendData}); setView('chat'); }} className={`p-3 rounded-2xl flex items-center gap-3 cursor-pointer transition-all ${activeChat?.uid === f.uid ? 'bg-blue-600' : 'hover:bg-slate-900/60'}`}>
-                                            <div className="relative shrink-0">
-                                                <img src={friendData.photoURL || getAvatar(friendData.displayName)} className="w-12 h-12 rounded-xl object-cover bg-slate-800 shadow-xl" />
-                                                {notifications[f.uid] && <div className="absolute -top-1 -right-1 w-5 h-5 bg-white text-blue-600 rounded-full flex items-center justify-center text-[10px] font-black shadow-lg">{notifications[f.uid]}</div>}
-                                            </div>
-                                            <div className="flex-1 min-w-0">
-                                                <div className="flex justify-between items-start">
-                                                    <p className="font-bold text-sm truncate">{friendData.displayName || "Contact"}</p>
-                                                    {isTypingMap[f.uid] && <span className="text-[8px] text-white/80 font-black animate-pulse tracking-tighter">ÉCRIT...</span>}
-                                                </div>
-                                                <p className={`text-[10px] truncate ${activeChat?.uid === f.uid ? 'text-blue-100' : 'text-slate-500'}`}>
-                                                    {lastMessages[f.uid] || "..."}
-                                                </p>
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </div>
+if(!user) return;
 
-                        <div className="p-4 border-t border-slate-800 flex items-center gap-3 bg-slate-900/30">
-                            <img src={profile.photoURL || getAvatar(profile.displayName)} className="w-10 h-10 rounded-xl bg-blue-600" />
-                            <div className="flex-1 min-w-0">
-                                <p className="text-xs font-black truncate uppercase tracking-widest">{profile.displayName}</p>
-                                <p className="text-[8px] text-slate-500 truncate font-bold">Connecté</p>
-                            </div>
-                            <button onClick={() => auth.signOut()} className="p-2 text-slate-500 hover:text-red-500 transition-colors"><Icon name="logout" size={16}/></button>
-                        </div>
-                    </aside>
+const userStatusRef=db
+.collection('artifacts')
+.doc(appId)
+.collection('public')
+.doc('data')
+.collection('status')
+.doc(user.uid);
 
-                    <main className={`flex-1 flex flex-col relative ${view === 'list' ? 'hidden md:flex' : 'flex'}`}>
-                        {activeChat ? (
-                            <React.Fragment>
-                                <header className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/50 backdrop-blur-md sticky top-0 z-10">
-                                    <div className="flex items-center gap-3">
-                                        <button onClick={() => setView('list')} className="md:hidden p-2 -ml-2 text-slate-500"><Icon name="arrowleft" /></button>
-                                        <div className="relative">
-                                            <img src={activeChat.photoURL || getAvatar(activeChat.displayName)} className="w-10 h-10 rounded-xl object-cover bg-slate-800" />
-                                            <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 border-2 border-slate-950 rounded-full"></div>
-                                        </div>
-                                        <div>
-                                            <h3 className="font-bold text-sm leading-tight">{activeChat.displayName}</h3>
-                                            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-tighter">
-                                                {isTypingMap[activeChat.uid] ? "En train d'écrire..." : "En ligne"}
-                                            </p>
-                                        </div>
-                                    </div>
-                                </header>
+userStatusRef.set({
+online:true,
+lastSeen:firebase.firestore.FieldValue.serverTimestamp(),
+displayName:profile.displayName||''
+},{merge:true});
 
-                                <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
-                                    {messages.map((msg, i) => {
-                                        const isMe = msg.senderId === user.uid;
-                                        return (
-                                            <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} fade-in`}>
-                                                <div className="group relative max-w-[85%] md:max-w-[70%]">
-                                                    <div className={`p-4 rounded-2xl shadow-sm ${isMe ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-slate-900 border border-slate-800 text-slate-200 rounded-tl-none'}`}>
-                                                        {msg.fileUrl ? (
-                                                            <div className="space-y-3">
-                                                                {msg.fileType === 'image' ? (
-                                                                    <img src={msg.fileUrl} className="max-w-full rounded-xl cursor-pointer hover:opacity-90 transition-opacity" onClick={() => window.open(msg.fileUrl)} />
-                                                                ) : (
-                                                                    <div className="flex items-center gap-3 bg-black/20 p-3 rounded-xl border border-white/5">
-                                                                        <div className="bg-white/10 p-2 rounded-lg"><Icon name="file" size={16}/></div>
-                                                                        <div className="flex-1 min-w-0">
-                                                                            <p className="text-[10px] font-black truncate">{msg.fileName || 'Fichier'}</p>
-                                                                            <p className="text-[8px] opacity-60 uppercase">Pièce jointe</p>
-                                                                        </div>
-                                                                        <button onClick={() => downloadFile(msg.fileUrl, msg.fileName)} className="p-2 hover:bg-white/10 rounded-lg transition-colors"><Icon name="download" size={14}/></button>
-                                                                    </div>
-                                                                )}
-                                                                {msg.text && <p className="text-sm leading-relaxed">{msg.text}</p>}
-                                                            </div>
-                                                        ) : (
-                                                            <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{msg.text}</p>
-                                                        )}
-                                                    </div>
+const unsubscribe=db
+.collection('artifacts')
+.doc(appId)
+.collection('public')
+.doc('data')
+.collection('status')
+.onSnapshot((snap)=>{
 
-                                                    <div className={`flex items-center gap-1 mt-1 ${isMe ? 'justify-end' : 'justify-start'}`}>
-                                                        {msg.reactions && Object.entries(msg.reactions).length > 0 && (
-                                                            <div className="flex -space-x-1">
-                                                                {Object.entries(msg.reactions).slice(0, 3).map(([uid, emoji]) => (
-                                                                    <div key={uid} className="bg-slate-800 border border-slate-700 rounded-full w-5 h-5 flex items-center justify-center text-[10px] reaction-pop">{emoji}</div>
-                                                                ))}
-                                                            </div>
-                                                        )}
-                                                        <span className="text-[8px] text-slate-600 font-bold uppercase tracking-widest ml-1">
-                                                            {msg.timestamp?.toDate ? new Date(msg.timestamp.toDate()).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '...'}
-                                                        </span>
-                                                    </div>
+const users={};
+let total=0;
 
-                                                    <div className={`absolute top-0 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-20 ${isMe ? 'right-full mr-2' : 'left-full ml-2'}`}>
-                                                        <div className="bg-slate-900 border border-slate-800 p-1.5 rounded-xl shadow-2xl flex gap-1 items-center">
-                                                            {EMOJIS.map(e => (
-                                                                <button key={e} onClick={() => reactToMessage(msg.id, e)} className="hover:scale-125 transition-transform p-1">{e}</button>
-                                                            ))}
-                                                            <div className="w-px h-3 bg-slate-800 mx-1"></div>
-                                                            <button onClick={() => { navigator.clipboard.writeText(msg.text); }} className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white" title="Copier"><Icon name="copy" size={12}/></button>
-                                                            {isMe && <button onClick={() => deleteMessage(msg.id)} className="p-1.5 hover:bg-red-500/10 rounded-lg text-slate-400 hover:text-red-500" title="Supprimer"><Icon name="trash" size={12}/></button>}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                    <div ref={messagesEndRef} />
-                                </div>
+snap.forEach(doc=>{
 
-                                <footer className="p-4 bg-slate-950 border-t border-slate-900">
-                                    <form onSubmit={(e) => { e.preventDefault(); sendMessage(inputText); }} className="flex items-end gap-3 max-w-4xl mx-auto">
-                                        <div className="flex gap-1 bg-slate-900 rounded-2xl p-1 border border-slate-800">
-                                            <button type="button" onClick={() => chatFileRef.current.click()} className="p-3 text-slate-500 hover:text-blue-500 transition-colors"><Icon name="plus" size={20}/></button>
-                                        </div>
-                                        <div className="flex-1 relative">
-                                            <textarea rows="1" placeholder="Tapez votre message..." className="w-full bg-slate-900 border border-slate-800 rounded-2xl px-5 py-3.5 pr-12 outline-none focus:border-blue-600 transition-all text-sm custom-scrollbar resize-none" value={inputText} 
-                                                onChange={e => {
-                                                    setInputText(e.target.value);
-                                                    updateTypingStatus(true);
-                                                    clearTimeout(typingTimeoutRef.current);
-                                                    typingTimeoutRef.current = setTimeout(() => updateTypingStatus(false), 3000);
-                                                }}
-                                                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(inputText); }}} />
-                                            <button type="submit" className="absolute right-3 bottom-3 p-1.5 text-blue-500 hover:text-blue-400 disabled:opacity-30" disabled={!inputText.trim()}>
-                                                <Icon name="send" />
-                                            </button>
-                                        </div>
-                                    </form>
-                                    <input type="file" ref={chatFileRef} className="hidden" onChange={handleFileUpload} />
-                                </footer>
-                            </React.Fragment>
-                        ) : (
-                            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-slate-950">
-                                <div className="w-24 h-24 bg-blue-600/10 rounded-[2.5rem] flex items-center justify-center mb-8 border border-blue-600/20">
-                                    <LogoPlaceholder className="w-12 h-12" />
-                                </div>
-                                <h2 className="text-2xl font-extrabold text-white mb-3 italic uppercase tracking-widest">BIENVENUE SUR ONYX</h2>
-                                <p className="text-slate-500 text-xs font-bold max-w-xs leading-relaxed uppercase tracking-widest">Messagerie sécurisée ultra-rapide. Sélectionnez un contact pour démarrer une conversation cryptée.</p>
-                                <div className="mt-12 grid grid-cols-2 gap-4">
-                                    <div className="bg-slate-900/50 p-4 rounded-3xl border border-slate-800">
-                                        <div className="text-blue-500 mb-2 font-black">PWA</div>
-                                        <div className="text-[10px] text-slate-500 uppercase font-bold">Installation native</div>
-                                    </div>
-                                    <div className="bg-slate-900/50 p-4 rounded-3xl border border-slate-800">
-                                        <div className="text-purple-500 mb-2 font-black">MEDIA</div>
-                                        <div className="text-[10px] text-slate-500 uppercase font-bold">Images & Fichiers</div>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-                    </main>
+const data=doc.data();
 
-                    {showSettings && (
-                        <div className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-xl flex items-center justify-center p-4">
-                            <div className="bg-slate-900 border border-slate-800 rounded-[2.5rem] w-full max-w-md overflow-hidden fade-in shadow-2xl">
-                                <div className="p-8 text-center border-b border-slate-800 relative bg-slate-900/50">
-                                    <button onClick={() => setShowSettings(false)} className="absolute top-6 right-6 text-slate-500 hover:text-white p-2"><Icon name="x"/></button>
-                                    <div className="relative inline-block group mb-6">
-                                        <img src={profile.photoURL} className="w-24 h-24 rounded-[2rem] object-cover bg-blue-600 border-4 border-slate-800" />
-                                        <button onClick={() => fileInputRef.current.click()} className="absolute -bottom-2 -right-2 bg-blue-600 p-2.5 rounded-2xl shadow-xl hover:bg-blue-500 transition-all border-4 border-slate-900">
-                                            <Icon name="plus" size={16}/>
-                                        </button>
-                                    </div>
-                                    <h3 className="text-xl font-extrabold uppercase italic tracking-widest">{profile.displayName}</h3>
-                                    <p className="text-[10px] text-slate-500 mt-1 uppercase font-bold tracking-widest">Paramètres Profil</p>
-                                </div>
-                                
-                                <div className="p-8 space-y-6">
-                                    <div>
-                                        <label className="text-[10px] text-slate-500 uppercase font-black mb-2 block tracking-widest">Nom d'affichage</label>
-                                        <div className="flex gap-2">
-                                            <input className="flex-1 bg-slate-800 border border-slate-700 rounded-2xl px-4 py-3 text-sm outline-none focus:border-blue-600 transition-all" value={profile.displayName} onChange={e => setProfile({...profile, displayName: e.target.value})} />
-                                            <button onClick={async () => {
-                                                await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('profiles').doc(user.uid).update({ displayName: profile.displayName });
-                                                alert("Nom mis à jour !");
-                                            }} className="bg-blue-600 px-6 rounded-2xl font-bold text-[10px] uppercase tracking-widest">Save</button>
-                                        </div>
-                                    </div>
+if(data.online) total++;
 
-                                    <div>
-                                        <label className="text-[10px] text-slate-500 uppercase font-black mb-2 block tracking-widest">Identifiant Unique</label>
-                                        <div className="flex gap-2">
-                                            <div className="flex-1 bg-slate-800/50 border border-slate-700/50 rounded-2xl px-4 py-3 text-[10px] font-mono text-slate-400 overflow-hidden truncate flex items-center">
-                                                {user.uid}
-                                            </div>
-                                            <button onClick={() => { navigator.clipboard.writeText(user.uid); alert("ID copié !"); }} className="bg-slate-800 px-6 rounded-2xl font-bold text-[10px] uppercase tracking-widest border border-slate-700 hover:bg-slate-700 transition-colors">Copier</button>
-                                        </div>
-                                        <p className="text-[9px] text-slate-500 mt-2 italic">* Partagez cet identifiant pour que vos amis puissent vous ajouter.</p>
-                                    </div>
+users[doc.id]=data;
 
-                                    <button onClick={() => auth.signOut()} className="w-full bg-red-500/10 border border-red-500/20 text-red-500 p-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] hover:bg-red-500 hover:text-white transition-all">
-                                        Déconnexion du compte
-                                    </button>
-                                </div>
-                                <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={async (e) => {
-                                    const file = e.target.files[0];
-                                    if (!file) return;
-                                    const url = await compressImage(file, 400, 400);
-                                    setProfile({...profile, photoURL: url});
-                                    await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('profiles').doc(user.uid).update({ photoURL: url });
-                                }} />
-                            </div>
-                        </div>
-                    )}
-                </div>
-            );
-        }
+});
 
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
-    </script>
+setOnlineUsers(users);
+setOnlineCount(total);
+
+});
+
+const setOffline=()=>{
+
+userStatusRef.set({
+online:false,
+lastSeen:firebase.firestore.FieldValue.serverTimestamp()
+},{merge:true});
+
+};
+
+window.addEventListener('beforeunload',setOffline);
+
+return ()=>{
+
+setOffline();
+
+window.removeEventListener('beforeunload',setOffline);
+
+unsubscribe();
+
+};
+
+},[user,profile.displayName]);
+
+
+
+useEffect(()=>{
+
+if(!user) return;
+
+const unsub=db
+.collection('artifacts')
+.doc(appId)
+.collection('users')
+.doc(user.uid)
+.collection('contacts')
+.doc('list')
+.onSnapshot(doc=>{
+
+if(doc.exists){
+
+setFriends(doc.data().friends||[]);
+
+}else{
+
+setFriends([]);
+
+}
+
+});
+
+return ()=>unsub();
+
+},[user]);
+
+
+
+useEffect(()=>{
+
+if(!user||friends.length===0) return;
+
+const unsubs=friends.map(friend=>{
+
+return db
+.collection('artifacts')
+.doc(appId)
+.collection('public')
+.doc('data')
+.collection('profiles')
+.doc(friend.uid)
+.onSnapshot(doc=>{
+
+if(doc.exists){
+
+setFriendProfiles(prev=>({
+...prev,
+[friend.uid]:doc.data()
+}));
+
+}
+
+});
+
+});
+
+return ()=>unsubs.forEach(u=>u());
+
+},[friends,user]);
+
+
+
+useEffect(()=>{
+
+if(!user||!activeChat) return;
+
+const chatId=[user.uid,activeChat.uid].sort().join('_');
+
+const unsubscribe=db
+.collection('artifacts')
+.doc(appId)
+.collection('public')
+.doc('data')
+.collection('chats')
+.doc(chatId)
+.collection('messages')
+.orderBy('timestamp','asc')
+.onSnapshot(snap=>{
+
+setMessages(
+snap.docs.map(doc=>({
+id:doc.id,
+...doc.data()
+}))
+);
+
+setTimeout(()=>{
+messagesEndRef.current?.scrollIntoView({
+behavior:'smooth'
+});
+},100);
+
+});
+
+return ()=>unsubscribe();
+
+},[user,activeChat]);
+
+
+
+const handleAuth=async(e)=>{
+
+e.preventDefault();
+
+try{
+
+if(isRegistering){
+
+await auth.createUserWithEmailAndPassword(email,password);
+
+}else{
+
+await auth.signInWithEmailAndPassword(email,password);
+
+}
+
+}catch(err){
+
+alert(err.message);
+
+}
+
+};
+
+
+
+const sendMessage=async()=>{
+
+if(!inputText.trim()) return;
+
+const chatId=[user.uid,activeChat.uid].sort().join('_');
+
+await db
+.collection('artifacts')
+.doc(appId)
+.collection('public')
+.doc('data')
+.collection('chats')
+.doc(chatId)
+.collection('messages')
+.add({
+
+text:inputText,
+senderId:user.uid,
+senderName:profile.displayName,
+reactions:{},
+timestamp:firebase.firestore.FieldValue.serverTimestamp()
+
+});
+
+setInputText('');
+
+};
+
+
+
+const reactToMessage=async(msgId,emoji)=>{
+
+const chatId=[user.uid,activeChat.uid].sort().join('_');
+
+const msgRef=db
+.collection('artifacts')
+.doc(appId)
+.collection('public')
+.doc('data')
+.collection('chats')
+.doc(chatId)
+.collection('messages')
+.doc(msgId);
+
+const msgDoc=await msgRef.get();
+
+const currentReactions=msgDoc.data().reactions||{};
+
+if(currentReactions[user.uid]===emoji){
+
+delete currentReactions[user.uid];
+
+}else{
+
+currentReactions[user.uid]=emoji;
+
+}
+
+await msgRef.update({
+reactions:currentReactions
+});
+
+};
+
+
+
+if(loading) return null;
+
+if(!user){
+
+return(
+
+<div className="h-screen flex items-center justify-center bg-slate-950 p-4">
+
+<div className="bg-slate-900 border border-slate-800 p-8 rounded-3xl w-full max-w-md fade-in">
+
+<h1 className="text-3xl font-black text-center mb-8">
+ONYX CHAT
+</h1>
+
+<form onSubmit={handleAuth} className="space-y-4">
+
+<input
+type="email"
+placeholder="Email"
+required
+value={email}
+onChange={e=>setEmail(e.target.value)}
+className="w-full bg-slate-800 p-4 rounded-xl outline-none"
+/>
+
+<input
+type="password"
+placeholder="Mot de passe"
+required
+value={password}
+onChange={e=>setPassword(e.target.value)}
+className="w-full bg-slate-800 p-4 rounded-xl outline-none"
+/>
+
+<button
+type="submit"
+className="w-full bg-blue-600 p-4 rounded-xl font-bold"
+>
+{isRegistering?'Créer un compte':'Connexion'}
+</button>
+
+<button
+type="button"
+onClick={()=>setIsRegistering(!isRegistering)}
+className="w-full text-xs text-slate-400"
+>
+{isRegistering?'Déjà un compte ?':'Créer un compte'}
+</button>
+
+</form>
+
+</div>
+
+</div>
+
+);
+
+}
+
+
+
+return(
+
+<div className="h-screen flex overflow-hidden">
+
+<aside className="w-80 border-r border-slate-800 flex flex-col">
+
+<div className="p-4 border-b border-slate-800">
+
+<h1 className="font-black text-xl">
+ONYX CHAT
+</h1>
+
+</div>
+
+<div className="p-4">
+
+<div className="mb-4 bg-slate-900 border border-slate-800 rounded-2xl p-3 flex items-center justify-between">
+
+<div>
+
+<p className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
+Utilisateurs connectés
+</p>
+
+<p className="text-xl font-black text-green-400">
+{onlineCount}
+</p>
+
+</div>
+
+<div className="w-3 h-3 rounded-full bg-green-500 animate-pulse"></div>
+
+</div>
+
+</div>
+
+<div className="flex-1 overflow-y-auto custom-scrollbar p-2">
+
+{friends.map(f=>{
+
+const friendData=friendProfiles[f.uid]||{};
+
+return(
+
+<div
+key={f.uid}
+onClick={()=>setActiveChat({
+uid:f.uid,
+...friendData
+})}
+className="p-3 rounded-2xl hover:bg-slate-900 cursor-pointer flex items-center gap-3"
+>
+
+<img
+src={friendData.photoURL||getAvatar(friendData.displayName)}
+className="w-12 h-12 rounded-xl"
+/>
+
+<div className="flex-1 min-w-0">
+
+<p className="font-bold truncate">
+{friendData.displayName||'Utilisateur'}
+</p>
+
+<p className="text-xs truncate opacity-70 flex items-center gap-1">
+
+{onlineUsers[f.uid]?.online ? (
+<>
+<span className="w-2 h-2 rounded-full bg-green-500"></span>
+<span className="text-green-400">En ligne</span>
+</>
+) : (
+<>
+<span className="w-2 h-2 rounded-full bg-slate-500"></span>
+<span>
+{isTypingMap[f.uid]
+? "Écrit..."
+: lastMessages[f.uid] || "Aucun message"}
+</span>
+</>
+)}
+
+</p>
+
+</div>
+
+</div>
+
+);
+
+})}
+
+</div>
+
+</aside>
+
+
+
+<main className="flex-1 flex flex-col">
+
+{activeChat ? (
+
+<>
+
+<div className="p-4 border-b border-slate-800 flex items-center gap-3 bg-slate-900">
+
+<img
+src={activeChat.photoURL||getAvatar(activeChat.displayName)}
+className="w-10 h-10 rounded-xl"
+/>
+
+<div>
+
+<h2 className="font-bold">
+{activeChat.displayName}
+</h2>
+
+<p className="text-xs text-slate-400">
+{onlineUsers[activeChat.uid]?.online
+? 'En ligne'
+: 'Hors ligne'}
+</p>
+
+</div>
+
+</div>
+
+
+
+<div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
+
+{messages.map(msg=>(
+
+<div
+key={msg.id}
+className={`flex ${
+msg.senderId===user.uid
+?'justify-end'
+:'justify-start'
+}`}
+>
+
+<div className={`max-w-sm p-3 rounded-2xl ${
+msg.senderId===user.uid
+?'bg-blue-600'
+:'bg-slate-800'
+}`}>
+
+<p className="text-sm whitespace-pre-wrap">
+{msg.text}
+</p>
+
+<div className="flex gap-2 mt-2">
+
+{EMOJIS.map(emoji=>(
+<button
+key={emoji}
+onClick={()=>reactToMessage(msg.id,emoji)}
+className="hover:scale-125 transition-transform text-lg"
+type="button"
+>
+{emoji}
+</button>
+))}
+
+</div>
+
+<div className="flex flex-wrap gap-1 mt-2">
+
+{Object.entries(
+Object.values(msg.reactions||{}).reduce((acc,emoji)=>{
+
+acc[emoji]=(acc[emoji]||0)+1;
+
+return acc;
+
+},{})
+).map(([emoji,count])=>(
+
+<button
+key={emoji}
+onClick={()=>reactToMessage(msg.id,emoji)}
+className="px-2 py-1 rounded-full bg-slate-900 border border-slate-700 text-xs flex items-center gap-1 reaction-pop"
+>
+
+<span className="text-sm">
+{emoji}
+</span>
+
+<span>
+{count}
+</span>
+
+</button>
+
+))}
+
+</div>
+
+</div>
+
+</div>
+
+))}
+
+<div ref={messagesEndRef}></div>
+
+</div>
+
+
+
+<div className="p-4 border-t border-slate-800 flex gap-2">
+
+<input
+value={inputText}
+onChange={e=>setInputText(e.target.value)}
+placeholder="Message..."
+className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-4 outline-none"
+/>
+
+<button
+onClick={sendMessage}
+className="bg-blue-600 px-6 rounded-xl font-bold"
+>
+Envoyer
+</button>
+
+</div>
+
+</>
+
+):(
+
+<div className="flex-1 flex items-center justify-center text-slate-500">
+Sélectionne une conversation
+</div>
+
+)}
+
+</main>
+
+</div>
+
+);
+
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+
+</script>
 </body>
 </html>
