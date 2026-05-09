@@ -115,8 +115,6 @@ const getAvatar = (name) => `https://ui-avatars.com/api/?name=${encodeURICompone
 
 /* ══════════════════════════════════════════
    CHIFFREMENT E2E — AES-GCM via Web Crypto
-   Étendu aux médias (images, audio, vidéo, fichiers)
-   via chiffrement Base64 → AES-GCM → Base64
 ══════════════════════════════════════════ */
 const E2E = {
     _keys: {},
@@ -155,7 +153,6 @@ const E2E = {
             return new TextDecoder().decode(decBuffer);
         } catch(e) { return '[message chiffré]'; }
     },
-    /* ── Chiffrement média (dataURL base64) ── */
     async encryptMedia(dataUrl, chatId) {
         if (!dataUrl) return { cipher: '', iv: '' };
         try {
@@ -210,28 +207,16 @@ const compressImage = (file, maxWidth=800, maxHeight=800) => new Promise((resolv
     reader.onerror = reject;
 });
 
-/* ── SVG Logo Onyx ── */
+/* ── LOGO IMAGE (remplace le SVG) ── */
+const LOGO_SRC = "LOGO_PLACEHOLDER";
+
 const OnyxLogo = ({ size = 32, className = '' }) => (
-    <svg width={size} height={size} viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" className={className}>
-        <defs>
-            <linearGradient id="lg1" x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse">
-                <stop stopColor="#60a5fa"/>
-                <stop offset="1" stopColor="#2563eb"/>
-            </linearGradient>
-        </defs>
-        <path d="M24 4L6 14V34L24 44L42 34V14L24 4Z" fill="url(#lg1)" opacity="0.15"/>
-        <path d="M24 4L6 14V34L24 44L42 34V14L24 4Z" stroke="url(#lg1)" strokeWidth="2" strokeLinejoin="round"/>
-        <path d="M24 10L10 18V30L24 38L38 30V18L24 10Z" fill="url(#lg1)" opacity="0.2"/>
-        <circle cx="24" cy="24" r="6" fill="url(#lg1)"/>
-        <path d="M24 18V12M24 36V30M30 21L36 17M12 31L18 27M30 27L36 31M12 17L18 21" stroke="#93c5fd" strokeWidth="1.5" strokeLinecap="round"/>
-    </svg>
+    <img src={LOGO_SRC} width={size} height={size} className={className} style={{objectFit:'cover', borderRadius:'20%'}} alt="Onyx Logo"/>
 );
 
-/* ── Logo avec fond pour la sidebar ── */
+/* ── Logo pour la sidebar ── */
 const LogoBox = ({ size = 36, className = '' }) => (
-    <div className={`bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-900/30 ${className}`} style={{ width: size, height: size }}>
-        <OnyxLogo size={size * 0.65} />
-    </div>
+    <img src={LOGO_SRC} width={size} height={size} className={`rounded-xl shadow-lg shadow-slate-900/30 ${className}`} style={{objectFit:'cover'}} alt="Onyx Logo"/>
 );
 
 const Icon = ({ name, size=18, className='' }) => {
@@ -309,9 +294,6 @@ const NotifPermissionModal = ({ onAccept, onDecline }) => (
     </div>
 );
 
-/* ══════════════════════════════════════════
-   DELETE CONFIRM MODAL
-══════════════════════════════════════════ */
 const DeleteConfirmModal = ({ open, title, description, onConfirm, onCancel }) => {
     if (!open) return null;
     return (
@@ -370,7 +352,7 @@ const UninstallSheet = ({ open, onClose }) => {
 };
 
 /* ══════════════════════════════════════════
-   AUTH SCREEN — redesigné
+   AUTH SCREEN
 ══════════════════════════════════════════ */
 const AuthScreen = ({ onSuccess }) => {
     const [email, setEmail] = useState('');
@@ -410,15 +392,14 @@ const AuthScreen = ({ onSuccess }) => {
                 <div className="auth-orb-1" style={{position:'absolute',top:'10%',left:'5%',width:'320px',height:'320px',borderRadius:'50%',background:'radial-gradient(circle, rgba(37,99,235,0.18) 0%, transparent 70%)',filter:'blur(40px)'}}/>
                 <div className="auth-orb-2" style={{position:'absolute',bottom:'10%',right:'5%',width:'280px',height:'280px',borderRadius:'50%',background:'radial-gradient(circle, rgba(99,102,241,0.15) 0%, transparent 70%)',filter:'blur(40px)'}}/>
                 <div className="auth-orb-3" style={{position:'absolute',top:'50%',left:'50%',transform:'translate(-50%,-50%)',width:'200px',height:'200px',borderRadius:'50%',background:'radial-gradient(circle, rgba(37,99,235,0.08) 0%, transparent 70%)',filter:'blur(30px)'}}/>
-                {/* Grid pattern */}
                 <div style={{position:'absolute',inset:0,backgroundImage:'linear-gradient(rgba(37,99,235,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(37,99,235,0.04) 1px, transparent 1px)',backgroundSize:'48px 48px'}}/>
             </div>
 
             <div className="auth-card" style={{width:'100%',maxWidth:'400px',position:'relative',zIndex:1}}>
                 {/* Logo + titre */}
                 <div style={{textAlign:'center',marginBottom:'32px'}}>
-                    <div className="auth-logo auth-logo-glow" style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:'80px',height:'80px',background:'linear-gradient(135deg, #1d4ed8, #2563eb)',borderRadius:'24px',marginBottom:'20px',border:'1px solid rgba(96,165,250,0.3)'}}>
-                        <OnyxLogo size={48}/>
+                    <div className="auth-logo auth-logo-glow" style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:'80px',height:'80px',background:'linear-gradient(135deg, #0a0a0a, #1a1a1a)',borderRadius:'24px',marginBottom:'20px',border:'1px solid rgba(180,150,100,0.3)',overflow:'hidden',padding:'0'}}>
+                        <img src={LOGO_SRC} width="80" height="80" style={{objectFit:'cover',width:'100%',height:'100%'}} alt="Onyx Logo"/>
                     </div>
                     <h1 className="auth-title shimmer-text" style={{fontSize:'28px',fontWeight:800,letterSpacing:'0.15em',marginBottom:'6px'}}>ONYX CHAT</h1>
                     <p style={{color:'#475569',fontSize:'11px',fontWeight:600,letterSpacing:'0.12em',textTransform:'uppercase'}}>
@@ -519,7 +500,6 @@ function App() {
     const [isTypingMap, setIsTypingMap] = useState({});
     const [openMenuId, setOpenMenuId] = useState(null);
 
-    // Delete confirm
     const [deleteModal, setDeleteModal] = useState({ open: false, type: null, target: null });
 
     useEffect(() => {
@@ -646,7 +626,7 @@ function App() {
     };
 
     useEffect(() => {
-        const handleBeforeInstallPrompt = (e) => { e.preventDefault(); setDeferredPrompt(e); if (!isInstalled) setIsInstallable(true); };
+        const handleBeforeInstallPrompt = (e) => { e.preventDefault(); setDeferredPrompt(e); setIsInstallable(true); };
         window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
         const handleAppInstalled = () => { setIsInstallable(false); setDeferredPrompt(null); setIsInstalled(true); localStorage.setItem('onyx_pwa_installed','true'); };
         window.addEventListener('appinstalled', handleAppInstalled);
@@ -654,7 +634,7 @@ function App() {
         const handleStandalone = (e) => { if (e.matches) { setIsInstalled(true); setIsInstallable(false); localStorage.setItem('onyx_pwa_installed','true'); } };
         mq.addEventListener('change', handleStandalone);
         return () => { window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt); window.removeEventListener('appinstalled', handleAppInstalled); mq.removeEventListener('change', handleStandalone); };
-    }, [isInstalled]);
+    }, []);
 
     useEffect(() => {
         activeChatRef.current = activeChat;
@@ -756,10 +736,8 @@ function App() {
             .onSnapshot(async snap => {
                 const raw = snap.docs.map(d => ({id:d.id,...d.data()}));
                 const decrypted = await Promise.all(raw.map(async msg => {
-                    // Déchiffrer texte
                     let text = msg.text || '';
                     if (msg.cipher && msg.iv) text = await E2E.decrypt(msg.cipher, msg.iv, chatId);
-                    // Déchiffrer média
                     let fileUrl = msg.fileUrl || null;
                     if (msg.fileEncrypted && msg.fileCipher && msg.fileIv) {
                         fileUrl = await E2E.decryptMedia(msg.fileCipher, msg.fileIv, chatId);
@@ -780,7 +758,6 @@ function App() {
             .set({ isTyping: { [user.uid]: isTyping } }, { merge: true });
     };
 
-    /* ── sendMessage avec chiffrement texte + média ── */
     const sendMessage = async (text=null, fileData=null) => {
         if (!text && !fileData) return;
         const chatId = [user.uid, activeChat.uid].sort().join('_');
@@ -793,10 +770,9 @@ function App() {
             }
             let fileFields = {};
             if (fileData?.url) {
-                // Chiffrer le media (dataURL)
                 const { cipher: fileCipher, iv: fileIv } = await E2E.encryptMedia(fileData.url, chatId);
                 fileFields = {
-                    fileUrl: null,          // on ne stocke plus en clair
+                    fileUrl: null,
                     fileCipher,
                     fileIv,
                     fileEncrypted: true,
@@ -832,7 +808,6 @@ function App() {
         await db.collection('artifacts').doc(APP_ID).collection('public').doc('data').collection('chats').doc(chatId).collection('messages').doc(msgId).delete();
     };
 
-    /* ── Supprimer toute la conversation ── */
     const deleteConversation = async (friendUid) => {
         const chatId = [user.uid, friendUid].sort().join('_');
         try {
@@ -843,19 +818,15 @@ function App() {
         } catch(e) { console.error(e); }
     };
 
-    /* ── Supprimer ami + conversation ── */
     const deleteFriend = async (friendUid) => {
         try {
-            // Supprimer des deux côtés
             const myListRef = db.collection('artifacts').doc(APP_ID).collection('users').doc(user.uid).collection('contacts').doc('list');
             const friendListRef = db.collection('artifacts').doc(APP_ID).collection('users').doc(friendUid).collection('contacts').doc('list');
             const batch = db.batch();
             batch.update(myListRef, { friends: firebase.firestore.FieldValue.arrayRemove({uid: friendUid}) });
             batch.update(friendListRef, { friends: firebase.firestore.FieldValue.arrayRemove({uid: user.uid}) });
             await batch.commit();
-            // Supprimer aussi les messages
             await deleteConversation(friendUid);
-            // Fermer le chat si actif
             if (activeChat?.uid === friendUid) { setActiveChat(null); setView('list'); }
         } catch(e) { console.error(e); }
     };
@@ -895,12 +866,23 @@ function App() {
     const shareApp = async () => {
         try { if (navigator.share) await navigator.share({title:'ONYX CHAT',text:'Rejoins-moi sur ONYX CHAT !',url:window.location.href}); else { await navigator.clipboard.writeText(window.location.href); alert("Lien copié !"); } } catch(e) {}
     };
+
+    /* ── Bouton Installer — tente toujours d'installer ── */
     const installApp = async () => {
-        if (!deferredPrompt) return;
-        deferredPrompt.prompt();
-        const {outcome} = await deferredPrompt.userChoice;
-        if (outcome==='accepted') { setIsInstallable(false); setDeferredPrompt(null); setIsInstalled(true); localStorage.setItem('onyx_pwa_installed','true'); }
+        if (deferredPrompt) {
+            deferredPrompt.prompt();
+            const {outcome} = await deferredPrompt.userChoice;
+            if (outcome==='accepted') { setIsInstallable(false); setDeferredPrompt(null); setIsInstalled(true); localStorage.setItem('onyx_pwa_installed','true'); }
+        } else {
+            const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+            if (isIOS) {
+                alert("Pour installer : appuyez sur le bouton Partager ↑ de Safari, puis \"Sur l'écran d'accueil\".");
+            } else {
+                alert("Pour installer : ouvrez le menu du navigateur (⋮) et choisissez \"Installer l'application\" ou \"Ajouter à l'écran d'accueil\".");
+            }
+        }
     };
+
     const reinstallApp = async () => {
         localStorage.removeItem('onyx_pwa_installed');
         try { if ('caches' in window) { const keys = await caches.keys(); await Promise.all(keys.map(k=>caches.delete(k))); } if ('serviceWorker' in navigator) { const regs = await navigator.serviceWorker.getRegistrations(); await Promise.all(regs.map(r=>r.unregister())); } } catch(e) {}
@@ -941,28 +923,16 @@ function App() {
                 </div>
 
                 <div className="flex-1 overflow-y-auto custom-scrollbar p-4" style={{WebkitOverflowScrolling:'touch'}}>
-                    {/* Share / Install */}
+                    {/* Share / Install — bouton Installer toujours présent */}
                     <div className="mb-5 grid grid-cols-2 gap-2">
                         <button onClick={shareApp} className="flex flex-col items-center justify-center p-3 bg-slate-900 border border-slate-800 rounded-2xl hover:bg-slate-800 transition-all gap-2 group">
                             <Icon name="share" className="text-blue-500 group-hover:scale-110 transition-transform"/>
                             <span className="text-[9px] font-black uppercase tracking-widest">Partager</span>
                         </button>
-                        {isInstalled ? (
-                            <button onClick={()=>setShowUninstallSheet(true)} className="flex flex-col items-center justify-center p-3 bg-red-500/10 border border-red-500/30 rounded-2xl hover:bg-red-500/20 transition-all gap-2 glow-uninstall group">
-                                <Icon name="uninstall" size={18} className="text-red-400 group-hover:scale-110 transition-transform"/>
-                                <span className="text-[9px] font-black uppercase tracking-widest text-red-400">Désinstaller</span>
-                            </button>
-                        ) : isInstallable ? (
-                            <button onClick={installApp} className="flex flex-col items-center justify-center p-3 bg-blue-600/10 border border-blue-600/30 rounded-2xl hover:bg-blue-600/20 transition-all gap-2 glow-button group">
-                                <Icon name="smartphone" className="text-blue-400 group-hover:scale-110 transition-transform"/>
-                                <span className="text-[9px] font-black uppercase tracking-widest">Installer</span>
-                            </button>
-                        ) : (
-                            <button onClick={reinstallApp} className="flex flex-col items-center justify-center p-3 bg-amber-500/10 border border-amber-500/30 rounded-2xl hover:bg-amber-500/20 transition-all gap-2 glow-reinstall group">
-                                <Icon name="refresh" size={18} className="text-amber-400 group-hover:scale-110 transition-transform"/>
-                                <span className="text-[9px] font-black uppercase tracking-widest text-amber-400">Réinstaller</span>
-                            </button>
-                        )}
+                        <button onClick={installApp} className="flex flex-col items-center justify-center p-3 bg-blue-600/10 border border-blue-600/30 rounded-2xl hover:bg-blue-600/20 transition-all gap-2 glow-button group">
+                            <Icon name="smartphone" className="text-blue-400 group-hover:scale-110 transition-transform"/>
+                            <span className="text-[9px] font-black uppercase tracking-widest">Installer</span>
+                        </button>
                     </div>
 
                     {/* Demandes */}
@@ -1077,7 +1047,6 @@ function App() {
                                 </div>
                             </div>
                             <div className="flex items-center gap-2">
-                                {/* Supprimer ami depuis le chat */}
                                 <button title="Supprimer ami" onClick={()=>setDeleteModal({open:true,type:'friend',target:activeChat.uid})}
                                     className="p-2 text-slate-600 hover:text-red-400 hover:bg-slate-800 rounded-lg transition-colors">
                                     <Icon name="userminus" size={15}/>
@@ -1241,8 +1210,8 @@ function App() {
                 ) : (
                     <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-slate-950">
                         <div style={{position:'relative',marginBottom:'28px'}}>
-                            <div style={{width:'96px',height:'96px',background:'linear-gradient(135deg,#1e3a8a,#2563eb)',borderRadius:'28px',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 20px 60px rgba(37,99,235,0.3)',border:'1px solid rgba(96,165,250,0.2)'}}>
-                                <OnyxLogo size={56}/>
+                            <div style={{width:'96px',height:'96px',background:'linear-gradient(135deg,#0a0a0a,#1a1a1a)',borderRadius:'28px',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 20px 60px rgba(0,0,0,0.5)',border:'1px solid rgba(180,150,100,0.2)',overflow:'hidden',padding:'0'}}>
+                                <img src={LOGO_SRC} width="96" height="96" style={{objectFit:'cover',width:'100%',height:'100%'}} alt="Onyx Logo"/>
                             </div>
                         </div>
                         <h2 style={{fontFamily:'Syne,sans-serif',fontWeight:800,fontSize:'20px',letterSpacing:'0.15em',textTransform:'uppercase',fontStyle:'italic',marginBottom:'8px',color:'white'}}>ONYX CHAT</h2>
@@ -1279,8 +1248,8 @@ function App() {
                             <button onClick={()=>setShowSettings(false)} className="absolute top-6 right-6 text-slate-500 hover:text-white p-2"><Icon name="x"/></button>
                             {/* Logo dans settings */}
                             <div className="flex justify-center mb-3">
-                                <div style={{width:'36px',height:'36px',background:'linear-gradient(135deg,#1e3a8a,#2563eb)',borderRadius:'10px',display:'flex',alignItems:'center',justifyContent:'center'}}>
-                                    <OnyxLogo size={22}/>
+                                <div style={{width:'36px',height:'36px',background:'#0a0a0a',borderRadius:'10px',overflow:'hidden',border:'1px solid rgba(180,150,100,0.2)'}}>
+                                    <img src={LOGO_SRC} width="36" height="36" style={{objectFit:'cover',width:'100%',height:'100%'}} alt="Onyx Logo"/>
                                 </div>
                             </div>
                             <div className="relative inline-block group mb-4">
