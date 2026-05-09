@@ -148,6 +148,33 @@
             </div>
         );
 
+        // Composant statut message : envoyé / reçu / lu
+        // envoyé  = une coche grise (timestamp présent, readBy vide ou absent)
+        // reçu    = deux coches grises (message livré côté serveur)
+        // lu      = deux coches bleues (l'ami est dans readBy)
+        const MessageStatus = ({ msg, friendUid }) => {
+            // Seulement pour nos propres messages
+            if (!msg.timestamp) {
+                // Pas encore de timestamp = en cours d'envoi
+                return (
+                    <svg viewBox="0 0 16 11" width="14" height="10" fill="none" className="inline-block ml-1 opacity-50">
+                        <path d="M1 5.5L5 9.5L15 1" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                );
+            }
+            const readBy = msg.readBy || [];
+            const isRead = readBy.includes(friendUid);
+            const color = isRead ? '#3b82f6' : '#64748b';
+            return (
+                <svg viewBox="0 0 20 11" width="16" height="10" fill="none" className="inline-block ml-1">
+                    {/* première coche */}
+                    <path d="M1 5.5L5 9.5L13 1" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    {/* deuxième coche décalée */}
+                    <path d="M7 5.5L11 9.5L19 1" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+            );
+        };
+
         function App() {
             const [user, setUser] = useState(null);
             const [profile, setProfile] = useState({ displayName: '', photoURL: '' });
@@ -336,10 +363,14 @@
             useEffect(() => {
                 if (!user || !activeChat) return;
                 const chatId = [user.uid, activeChat.uid].sort().join('_');
+                // Marquer les messages de l'ami comme lus dès l'ouverture du chat
+                markMessagesAsRead(chatId, activeChat.uid).catch(() => {});
                 const unsubscribe = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('chats').doc(chatId).collection('messages')
                     .orderBy('timestamp', 'asc')
                     .onSnapshot(snap => {
                         setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+                        // Marquer comme lus au fil des nouveaux messages
+                        markMessagesAsRead(chatId, activeChat.uid).catch(() => {});
                         setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
                     });
                 return () => unsubscribe();
@@ -375,10 +406,27 @@
                         senderId: user.uid,
                         senderName: profile.displayName,
                         reactions: {},
+                        readBy: [],          // statut lecture : tableau des uid qui ont lu
                         timestamp: firebase.firestore.FieldValue.serverTimestamp()
                     });
                     setInputText('');
                 } catch (err) { console.error(err); }
+            };
+
+            // Marquer tous les messages non lus de l'ami comme lus
+            const markMessagesAsRead = async (chatId, friendUid) => {
+                const snap = await db.collection('artifacts').doc(appId).collection('public').doc('data')
+                    .collection('chats').doc(chatId).collection('messages')
+                    .where('senderId', '==', friendUid)
+                    .get();
+                const batch = db.batch();
+                snap.docs.forEach(doc => {
+                    const data = doc.data();
+                    if (!(data.readBy || []).includes(user.uid)) {
+                        batch.update(doc.ref, { readBy: firebase.firestore.FieldValue.arrayUnion(user.uid) });
+                    }
+                });
+                await batch.commit();
             };
 
             const deleteMessage = async (msgId) => {
@@ -492,12 +540,12 @@
                             <button onClick={() => setShowSettings(true)} className="text-slate-500 hover:text-white p-2 hover:bg-slate-800 rounded-lg transition-all"><Icon name="settings" /></button>
                         </div>
 
-                        {/* FIX 3 — Compteur connectés, juste sous le header */}
+                        {/* Compteur connectés avec emoji silhouettes */}
                         <div className="px-5 py-2.5 flex items-center gap-2 bg-slate-900/20 border-b border-slate-800/50">
                             <div className="w-2 h-2 rounded-full bg-green-400 shadow-sm shadow-green-400/50 animate-pulse"></div>
-                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                                <span className="text-green-400">{totalOnline}</span> connecté{totalOnline > 1 ? 's' : ''} en ce moment
-                            </span>
+                            <span className="emoji-native text-base leading-none">👥</span>
+                            <span className="text-[10px] font-black uppercase tracking-widest text-green-400">{totalOnline}</span>
+                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">en ligne</span>
                         </div>
 
                         <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
@@ -657,7 +705,7 @@
                                                     </div>
 
                                                     <div className={`flex items-center gap-1 mt-1 ${isMe ? 'justify-end' : 'justify-start'}`}>
-                                                        {/* FIX 1 — réactions groupées par emoji avec classe emoji-native */}
+                                                        {/* réactions groupées par emoji */}
                                                         {Object.entries(reactionGroups).length > 0 && (
                                                             <div className="flex gap-1">
                                                                 {Object.entries(reactionGroups).map(([emoji, count]) => (
@@ -666,15 +714,16 @@
                                                                         onClick={() => reactToMessage(msg.id, emoji)}
                                                                         className="flex items-center gap-0.5 bg-slate-800 border border-slate-700 rounded-full px-2 py-0.5 reaction-pop hover:bg-slate-700 transition-colors"
                                                                     >
-                                                                        {/* FIX 1 — span avec classe emoji-native pour affichage correct */}
                                                                         <span className="emoji-native text-sm">{emoji}</span>
                                                                         {count > 1 && <span className="text-[9px] font-black text-slate-300">{count}</span>}
                                                                     </button>
                                                                 ))}
                                                             </div>
                                                         )}
-                                                        <span className="text-[8px] text-slate-600 font-bold uppercase tracking-widest ml-1">
+                                                        <span className="text-[8px] text-slate-600 font-bold uppercase tracking-widest ml-1 flex items-center gap-0.5">
                                                             {msg.timestamp?.toDate ? new Date(msg.timestamp.toDate()).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '...'}
+                                                            {/* Statut message : seulement pour mes messages */}
+                                                            {isMe && <MessageStatus msg={msg} friendUid={activeChat.uid} />}
                                                         </span>
                                                     </div>
 
@@ -737,12 +786,12 @@
                                         <div className="text-[10px] text-slate-500 uppercase font-bold">Images & Fichiers</div>
                                     </div>
                                 </div>
-                                {/* FIX 3 — compteur aussi sur l'écran d'accueil */}
+                                {/* Compteur écran d'accueil */}
                                 <div className="mt-6 flex items-center gap-2 bg-slate-900/50 border border-slate-800 px-4 py-2.5 rounded-2xl">
                                     <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></div>
-                                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                                        <span className="text-green-400">{totalOnline}</span> utilisateur{totalOnline > 1 ? 's' : ''} en ligne
-                                    </span>
+                                    <span className="emoji-native text-base leading-none">👥</span>
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-green-400">{totalOnline}</span>
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">en ligne</span>
                                 </div>
                             </div>
                         )}
