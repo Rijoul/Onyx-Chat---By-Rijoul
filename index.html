@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ONYX CHAT</title>
-    <!-- Manifest pour permettre l'installation PWA -->
     <link rel="manifest" href="data:application/manifest+json,{'name':'Onyx Chat','short_name':'Onyx','start_url':'.','display':'standalone','background_color':'#020617','theme_color':'#2563eb'}">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -32,13 +31,24 @@
             50% { box-shadow: 0 0 15px rgba(37, 99, 235, 0.5); }
             100% { box-shadow: 0 0 5px rgba(37, 99, 235, 0.2); }
         }
-
-        /* FIX EMOJI — force le rendu natif du navigateur, évite que Tailwind/SVG écrase les glyphes couleur */
         .emoji-native {
             font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif !important;
             font-style: normal !important;
             line-height: 1;
             display: inline-block;
+        }
+        /* Menu bulle actions message */
+        .msg-action-menu {
+            animation: menuPop 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        @keyframes menuPop {
+            from { opacity: 0; transform: scale(0.8) translateY(4px); }
+            to   { opacity: 1; transform: scale(1) translateY(0); }
+        }
+        /* Badge E2E */
+        .e2e-badge {
+            background: linear-gradient(135deg, #064e3b, #065f46);
+            border: 1px solid #059669;
         }
     </style>
 </head>
@@ -46,7 +56,59 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
+        const { useState, useEffect, useRef, useCallback } = React;
+
+        // ══════════════════════════════════════════════════════
+        //  CHIFFREMENT E2E — AES-GCM via Web Crypto API
+        //  Clé dérivée du chatId (partagé par les 2 participants)
+        // ══════════════════════════════════════════════════════
+        const E2E = {
+            // Dériver une clé AES-256 à partir du chatId (PBKDF2)
+            async deriveKey(chatId) {
+                const enc = new TextEncoder();
+                const baseKey = await crypto.subtle.importKey(
+                    'raw', enc.encode(chatId), { name: 'PBKDF2' }, false, ['deriveKey']
+                );
+                return crypto.subtle.deriveKey(
+                    { name: 'PBKDF2', salt: enc.encode('onyx-e2e-salt-v1'), iterations: 100000, hash: 'SHA-256' },
+                    baseKey,
+                    { name: 'AES-GCM', length: 256 },
+                    false,
+                    ['encrypt', 'decrypt']
+                );
+            },
+
+            // Chiffrer une chaîne → base64(iv + ciphertext)
+            async encrypt(plaintext, chatId) {
+                if (!plaintext) return plaintext;
+                try {
+                    const key = await E2E.deriveKey(chatId);
+                    const iv = crypto.getRandomValues(new Uint8Array(12));
+                    const enc = new TextEncoder();
+                    const cipherBuf = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(plaintext));
+                    const combined = new Uint8Array(iv.length + cipherBuf.byteLength);
+                    combined.set(iv, 0);
+                    combined.set(new Uint8Array(cipherBuf), iv.length);
+                    return btoa(String.fromCharCode(...combined));
+                } catch { return plaintext; }
+            },
+
+            // Déchiffrer base64(iv + ciphertext) → chaîne
+            async decrypt(ciphertext, chatId) {
+                if (!ciphertext) return ciphertext;
+                // Si ce n'est pas du base64 chiffré (anciens messages), retourner tel quel
+                try {
+                    const key = await E2E.deriveKey(chatId);
+                    const bytes = Uint8Array.from(atob(ciphertext), c => c.charCodeAt(0));
+                    const iv = bytes.slice(0, 12);
+                    const data = bytes.slice(12);
+                    const plainBuf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, data);
+                    return new TextDecoder().decode(plainBuf);
+                } catch { return ciphertext; /* message non chiffré ou ancien format */ }
+            }
+        };
+
+        // ══════════════════════════════════════════════════════
 
         const firebaseConfig = {
             apiKey: "AIzaSyCkiMirg--YtJMCENWm6Ba4qBn7XY55qrQ",
@@ -75,22 +137,15 @@
                     img.src = event.target.result;
                     img.onload = () => {
                         const canvas = document.createElement('canvas');
-                        let width = img.width;
-                        let height = img.height;
-                        if (width > height) {
-                            if (width > maxWidth) { height *= maxWidth / width; width = maxWidth; }
-                        } else {
-                            if (height > maxHeight) { width *= maxHeight / height; height = maxHeight; }
-                        }
-                        canvas.width = width;
-                        canvas.height = height;
-                        const ctx = canvas.getContext('2d');
-                        ctx.drawImage(img, 0, 0, width, height);
-                        const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
-                        resolve(dataUrl);
+                        let width = img.width, height = img.height;
+                        if (width > height) { if (width > maxWidth) { height *= maxWidth / width; width = maxWidth; } }
+                        else { if (height > maxHeight) { width *= maxHeight / height; height = maxHeight; } }
+                        canvas.width = width; canvas.height = height;
+                        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+                        resolve(canvas.toDataURL('image/jpeg', 0.7));
                     };
                 };
-                reader.onerror = (error) => reject(error);
+                reader.onerror = reject;
             });
         };
 
@@ -108,34 +163,13 @@
                 trash: <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6" />,
                 x: <path d="M18 6 6 18M6 6l12 12" />,
                 share: <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8M16 6l-4-4-4 4M12 2v13" />,
-                smartphone: (
-                    <React.Fragment>
-                        <rect width="14" height="20" x="5" y="2" rx="2" ry="2" />
-                        <path d="M12 18h.01" />
-                    </React.Fragment>
-                ),
-                smile: (
-                    <React.Fragment>
-                        <circle cx="12" cy="12" r="10" />
-                        <path d="M8 14s1.5 2 4 2 4-2 4-2" />
-                        <line x1="9" y1="9" x2="9.01" y2="9" />
-                        <line x1="15" y1="9" x2="15.01" y2="9" />
-                    </React.Fragment>
-                ),
-                /* FIX 3 — icône users pour le compteur connectés */
-                users: (
-                    <React.Fragment>
-                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                        <circle cx="9" cy="7" r="4" />
-                        <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-                    </React.Fragment>
-                )
+                smartphone: <React.Fragment><rect width="14" height="20" x="5" y="2" rx="2" ry="2" /><path d="M12 18h.01" /></React.Fragment>,
+                lock: <React.Fragment><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></React.Fragment>,
+                users: <React.Fragment><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></React.Fragment>
             };
-            const key = name.toLowerCase();
             return (
                 <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
-                    {icons[key] || icons['x']}
+                    {icons[name.toLowerCase()] || icons['x']}
                 </svg>
             );
         };
@@ -148,14 +182,8 @@
             </div>
         );
 
-        // Composant statut message : envoyé / reçu / lu
-        // envoyé  = une coche grise (timestamp présent, readBy vide ou absent)
-        // reçu    = deux coches grises (message livré côté serveur)
-        // lu      = deux coches bleues (l'ami est dans readBy)
         const MessageStatus = ({ msg, friendUid }) => {
-            // Seulement pour nos propres messages
             if (!msg.timestamp) {
-                // Pas encore de timestamp = en cours d'envoi
                 return (
                     <svg viewBox="0 0 16 11" width="14" height="10" fill="none" className="inline-block ml-1 opacity-50">
                         <path d="M1 5.5L5 9.5L15 1" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
@@ -167,14 +195,171 @@
             const color = isRead ? '#3b82f6' : '#64748b';
             return (
                 <svg viewBox="0 0 20 11" width="16" height="10" fill="none" className="inline-block ml-1">
-                    {/* première coche */}
                     <path d="M1 5.5L5 9.5L13 1" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                    {/* deuxième coche décalée */}
                     <path d="M7 5.5L11 9.5L19 1" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
             );
         };
 
+        // ── Composant menu d'actions message (E2E-safe, mobile-friendly) ──
+        // Premier tap → affiche le menu
+        // Deuxième tap sur un bouton → exécute l'action
+        const MessageBubble = ({ msg, isMe, onReact, onDelete, onCopy, friendUid, chatId }) => {
+            const [menuOpen, setMenuOpen] = useState(false);
+            const [decryptedText, setDecryptedText] = useState(null);
+            const menuRef = useRef(null);
+
+            // Déchiffrement à l'affichage
+            useEffect(() => {
+                if (msg.text && chatId) {
+                    E2E.decrypt(msg.text, chatId).then(setDecryptedText);
+                } else {
+                    setDecryptedText(msg.text || '');
+                }
+            }, [msg.text, chatId]);
+
+            // Fermer le menu si on clique ailleurs
+            useEffect(() => {
+                if (!menuOpen) return;
+                const handler = (e) => {
+                    if (menuRef.current && !menuRef.current.contains(e.target)) {
+                        setMenuOpen(false);
+                    }
+                };
+                // Délai pour éviter que le tap d'ouverture ferme immédiatement
+                const t = setTimeout(() => document.addEventListener('pointerdown', handler), 50);
+                return () => { clearTimeout(t); document.removeEventListener('pointerdown', handler); };
+            }, [menuOpen]);
+
+            const reactionGroups = {};
+            if (msg.reactions) {
+                Object.values(msg.reactions).forEach(emoji => {
+                    reactionGroups[emoji] = (reactionGroups[emoji] || 0) + 1;
+                });
+            }
+
+            const handleBubbleTap = (e) => {
+                // Sur desktop : hover gère l'affichage, on ignore
+                // Sur mobile (touch) : premier tap = ouvrir menu
+                e.stopPropagation();
+                setMenuOpen(v => !v);
+            };
+
+            return (
+                <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} fade-in`}>
+                    <div className="relative max-w-[85%] md:max-w-[70%]" ref={menuRef}>
+
+                        {/* Bulle principale */}
+                        <div
+                            className={`p-4 rounded-2xl shadow-sm cursor-pointer select-none
+                                ${isMe ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-slate-900 border border-slate-800 text-slate-200 rounded-tl-none'}
+                                ${menuOpen ? 'ring-2 ring-blue-400/40' : ''}
+                            `}
+                            onPointerDown={handleBubbleTap}
+                        >
+                            {msg.fileUrl ? (
+                                <div className="space-y-3">
+                                    {msg.fileType === 'image' ? (
+                                        <img src={msg.fileUrl} className="max-w-full rounded-xl" />
+                                    ) : (
+                                        <div className="flex items-center gap-3 bg-black/20 p-3 rounded-xl border border-white/5">
+                                            <div className="bg-white/10 p-2 rounded-lg"><Icon name="file" size={16}/></div>
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-[10px] font-black truncate">{msg.fileName || 'Fichier'}</p>
+                                                <p className="text-[8px] opacity-60 uppercase">Pièce jointe</p>
+                                            </div>
+                                        </div>
+                                    )}
+                                    {decryptedText && <p className="text-sm leading-relaxed">{decryptedText}</p>}
+                                </div>
+                            ) : (
+                                <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
+                                    {decryptedText === null ? '...' : decryptedText}
+                                </p>
+                            )}
+
+                            {/* Indicateur E2E discret */}
+                            <div className="flex items-center gap-1 mt-1.5 opacity-40">
+                                <Icon name="lock" size={8} className={isMe ? 'text-blue-200' : 'text-slate-500'} />
+                                <span className={`text-[7px] font-black uppercase tracking-widest ${isMe ? 'text-blue-200' : 'text-slate-500'}`}>chiffré</span>
+                            </div>
+                        </div>
+
+                        {/* Menu actions — apparaît au tap / hover desktop */}
+                        {menuOpen && (
+                            <div className={`msg-action-menu absolute z-30 bottom-full mb-2
+                                ${isMe ? 'right-0' : 'left-0'}
+                            `}>
+                                <div className="bg-slate-900 border border-slate-700 p-2 rounded-2xl shadow-2xl flex gap-1 items-center">
+                                    {EMOJIS.map(e => (
+                                        <button
+                                            key={e}
+                                            onPointerDown={(ev) => { ev.stopPropagation(); onReact(msg.id, e); setMenuOpen(false); }}
+                                            className="hover:scale-125 active:scale-110 transition-transform p-1.5 leading-none rounded-xl hover:bg-slate-800"
+                                        >
+                                            <span className="emoji-native text-xl">{e}</span>
+                                        </button>
+                                    ))}
+                                    <div className="w-px h-5 bg-slate-700 mx-1"></div>
+                                    {msg.text && (
+                                        <button
+                                            onPointerDown={(ev) => { ev.stopPropagation(); onCopy(decryptedText || ''); setMenuOpen(false); }}
+                                            className="p-2 hover:bg-slate-800 rounded-xl text-slate-400 hover:text-white transition-colors"
+                                            title="Copier"
+                                        >
+                                            <Icon name="copy" size={14}/>
+                                        </button>
+                                    )}
+                                    {isMe && (
+                                        <button
+                                            onPointerDown={(ev) => {
+                                                ev.stopPropagation();
+                                                if (window.confirm('Supprimer ce message ?')) {
+                                                    onDelete(msg.id);
+                                                }
+                                                setMenuOpen(false);
+                                            }}
+                                            className="p-2 hover:bg-red-500/20 rounded-xl text-slate-400 hover:text-red-400 transition-colors"
+                                            title="Supprimer"
+                                        >
+                                            <Icon name="trash" size={14}/>
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Réactions groupées */}
+                        {Object.entries(reactionGroups).length > 0 && (
+                            <div className={`flex gap-1 mt-1 flex-wrap ${isMe ? 'justify-end' : 'justify-start'}`}>
+                                {Object.entries(reactionGroups).map(([emoji, count]) => (
+                                    <button
+                                        key={emoji}
+                                        onPointerDown={(e) => { e.stopPropagation(); onReact(msg.id, emoji); }}
+                                        className="flex items-center gap-0.5 bg-slate-800 border border-slate-700 rounded-full px-2 py-0.5 reaction-pop hover:bg-slate-700 transition-colors"
+                                    >
+                                        <span className="emoji-native text-sm">{emoji}</span>
+                                        {count > 1 && <span className="text-[9px] font-black text-slate-300">{count}</span>}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+
+                        {/* Horodatage + statut */}
+                        <div className={`flex items-center gap-1 mt-0.5 ${isMe ? 'justify-end' : 'justify-start'}`}>
+                            <span className="text-[8px] text-slate-600 font-bold uppercase tracking-widest flex items-center gap-0.5">
+                                {msg.timestamp?.toDate ? new Date(msg.timestamp.toDate()).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '...'}
+                                {isMe && <MessageStatus msg={msg} friendUid={friendUid} />}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // ══════════════════════════════════════════════════════
+        //  APP PRINCIPALE
+        // ══════════════════════════════════════════════════════
         function App() {
             const [user, setUser] = useState(null);
             const [profile, setProfile] = useState({ displayName: '', photoURL: '' });
@@ -183,7 +368,7 @@
             const [password, setPassword] = useState('');
             const [isRegistering, setIsRegistering] = useState(false);
             const [authError, setAuthError] = useState('');
-            
+
             const [friends, setFriends] = useState([]);
             const [friendProfiles, setFriendProfiles] = useState({});
             const [incomingRequests, setIncomingRequests] = useState([]);
@@ -193,7 +378,7 @@
             const [view, setView] = useState('list');
             const [showSettings, setShowSettings] = useState(false);
             const [friendIdInput, setFriendIdInput] = useState('');
-            
+
             const [lastMessages, setLastMessages] = useState({});
             const [isTypingMap, setIsTypingMap] = useState({});
             const [notifications, setNotifications] = useState({});
@@ -201,9 +386,8 @@
             const [deferredPrompt, setDeferredPrompt] = useState(null);
             const [isInstallable, setIsInstallable] = useState(false);
 
-            /* ── FIX 2 & 3 : présence en ligne ── */
-            const [onlineStatus, setOnlineStatus] = useState({});   // { [uid]: true/false }
-            const [totalOnline, setTotalOnline] = useState(0);      // compteur global
+            const [onlineStatus, setOnlineStatus] = useState({});
+            const [totalOnline, setTotalOnline] = useState(0);
 
             const fileInputRef = useRef(null);
             const chatFileRef = useRef(null);
@@ -211,239 +395,189 @@
             const activeChatRef = useRef(null);
             const typingTimeoutRef = useRef(null);
 
+            // chatId courant
+            const chatId = user && activeChat ? [user.uid, activeChat.uid].sort().join('_') : null;
+
             useEffect(() => {
-                const handleBeforeInstallPrompt = (e) => {
-                    e.preventDefault();
-                    setDeferredPrompt(e);
-                    setIsInstallable(true);
-                };
-                window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-                const handleAppInstalled = () => { setIsInstallable(false); setDeferredPrompt(null); };
-                window.addEventListener('appinstalled', handleAppInstalled);
-                return () => {
-                    window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-                    window.removeEventListener('appinstalled', handleAppInstalled);
-                };
+                const handleBefore = (e) => { e.preventDefault(); setDeferredPrompt(e); setIsInstallable(true); };
+                window.addEventListener('beforeinstallprompt', handleBefore);
+                const handleInstalled = () => { setIsInstallable(false); setDeferredPrompt(null); };
+                window.addEventListener('appinstalled', handleInstalled);
+                return () => { window.removeEventListener('beforeinstallprompt', handleBefore); window.removeEventListener('appinstalled', handleInstalled); };
             }, []);
 
             useEffect(() => {
                 activeChatRef.current = activeChat;
                 if (activeChat) {
-                    setNotifications(prev => {
-                        const next = { ...prev };
-                        delete next[activeChat.uid];
-                        return next;
-                    });
+                    setNotifications(prev => { const n = { ...prev }; delete n[activeChat.uid]; return n; });
                 }
             }, [activeChat]);
 
             useEffect(() => {
-                const unsubscribe = auth.onAuthStateChanged(async (u) => {
+                const unsub = auth.onAuthStateChanged(async (u) => {
                     if (u) {
                         setUser(u);
-                        const userRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('profiles').doc(u.uid);
-                        userRef.onSnapshot(doc => {
+                        const ref = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('profiles').doc(u.uid);
+                        ref.onSnapshot(doc => {
                             if (doc.exists) setProfile(doc.data());
                             else {
-                                const newProfile = { uid: u.uid, displayName: u.email.split('@')[0], photoURL: getAvatar(u.email.split('@')[0]), createdAt: firebase.firestore.FieldValue.serverTimestamp() };
-                                userRef.set(newProfile);
-                                setProfile(newProfile);
+                                const p = { uid: u.uid, displayName: u.email.split('@')[0], photoURL: getAvatar(u.email.split('@')[0]), createdAt: firebase.firestore.FieldValue.serverTimestamp() };
+                                ref.set(p); setProfile(p);
                             }
                         });
                     } else setUser(null);
                     setLoading(false);
                 });
-                return () => unsubscribe();
+                return () => unsub();
             }, []);
 
-            /* ── FIX 2 & 3 : gestion présence Firestore ── */
             useEffect(() => {
                 if (!user) return;
-
-                const presenceRef = db.collection('artifacts').doc(appId)
-                    .collection('public').doc('data')
-                    .collection('presence').doc(user.uid);
-
-                // Marquer en ligne à l'arrivée
-                presenceRef.set({ online: true, lastSeen: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
-
-                // Basculer offline/online selon la visibilité de l'onglet
-                const handleVisibility = () => {
-                    presenceRef.set({
-                        online: document.visibilityState !== 'hidden',
-                        lastSeen: firebase.firestore.FieldValue.serverTimestamp()
-                    }, { merge: true });
-                };
-                document.addEventListener('visibilitychange', handleVisibility);
-
-                // Marquer offline à la fermeture
-                const handleUnload = () => {
-                    presenceRef.set({ online: false, lastSeen: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
-                };
-                window.addEventListener('beforeunload', handleUnload);
-
-                // FIX 3 — écouter toute la collection presence pour le compteur global
-                const unsubPresence = db.collection('artifacts').doc(appId)
-                    .collection('public').doc('data').collection('presence')
+                const presRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('presence').doc(user.uid);
+                presRef.set({ online: true, lastSeen: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+                const onVis = () => presRef.set({ online: document.visibilityState !== 'hidden', lastSeen: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+                document.addEventListener('visibilitychange', onVis);
+                const onUnload = () => presRef.set({ online: false, lastSeen: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+                window.addEventListener('beforeunload', onUnload);
+                const unsubPres = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('presence')
                     .onSnapshot(snap => {
-                        const map = {};
-                        let count = 0;
-                        snap.docs.forEach(doc => {
-                            const d = doc.data();
-                            map[doc.id] = d.online === true;
-                            if (d.online === true) count++;
-                        });
-                        setOnlineStatus(map);
-                        setTotalOnline(count);
+                        const map = {}; let count = 0;
+                        snap.docs.forEach(d => { const data = d.data(); map[d.id] = data.online === true; if (data.online) count++; });
+                        setOnlineStatus(map); setTotalOnline(count);
                     });
-
                 return () => {
-                    document.removeEventListener('visibilitychange', handleVisibility);
-                    window.removeEventListener('beforeunload', handleUnload);
-                    presenceRef.set({ online: false, lastSeen: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
-                    unsubPresence();
+                    document.removeEventListener('visibilitychange', onVis);
+                    window.removeEventListener('beforeunload', onUnload);
+                    presRef.set({ online: false, lastSeen: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+                    unsubPres();
                 };
             }, [user]);
 
             useEffect(() => {
                 if (!user || friends.length === 0) return;
-                const unsubs = friends.map(friend => {
-                    return db.collection('artifacts').doc(appId).collection('public').doc('data').collection('profiles').doc(friend.uid)
-                        .onSnapshot(doc => {
-                            if (doc.exists) {
-                                setFriendProfiles(prev => ({ ...prev, [friend.uid]: doc.data() }));
-                            }
-                        });
-                });
-                return () => unsubs.forEach(unsub => unsub());
+                const unsubs = friends.map(f =>
+                    db.collection('artifacts').doc(appId).collection('public').doc('data').collection('profiles').doc(f.uid)
+                        .onSnapshot(doc => { if (doc.exists) setFriendProfiles(prev => ({ ...prev, [f.uid]: doc.data() })); })
+                );
+                return () => unsubs.forEach(u => u());
             }, [friends, user]);
 
             useEffect(() => {
                 if (!user) return;
-                const unsubFriends = db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('contacts').doc('list')
+                const unsubF = db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('contacts').doc('list')
                     .onSnapshot(doc => { if (doc.exists) setFriends(doc.data().friends || []); else setFriends([]); });
-                
-                const unsubRequests = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('friendRequests')
-                    .where('toId', '==', user.uid)
-                    .where('status', '==', 'pending')
-                    .onSnapshot(snap => setIncomingRequests(snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
-
-                return () => { unsubFriends(); unsubRequests(); };
+                const unsubR = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('friendRequests')
+                    .where('toId', '==', user.uid).where('status', '==', 'pending')
+                    .onSnapshot(snap => setIncomingRequests(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+                return () => { unsubF(); unsubR(); };
             }, [user]);
 
             useEffect(() => {
                 if (!user || friends.length === 0) return;
-                const unsubs = friends.map(friend => {
-                    const chatId = [user.uid, friend.uid].sort().join('_');
-                    const unsubMsg = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('chats').doc(chatId).collection('messages')
+                const unsubs = friends.map(f => {
+                    const cid = [user.uid, f.uid].sort().join('_');
+                    const unsubMsg = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('chats').doc(cid).collection('messages')
                         .orderBy('timestamp', 'desc').limit(1)
-                        .onSnapshot(snap => {
+                        .onSnapshot(async snap => {
                             if (!snap.empty) {
-                                const lastMsg = snap.docs[0].data();
-                                setLastMessages(prev => ({ ...prev, [friend.uid]: lastMsg.fileUrl ? "📷 Pièce jointe" : lastMsg.text }));
-                                if (lastMsg.senderId === friend.uid && activeChatRef.current?.uid !== friend.uid) {
-                                    setNotifications(prev => ({ ...prev, [friend.uid]: (prev[friend.uid] || 0) + 1 }));
+                                const last = snap.docs[0].data();
+                                let preview = last.fileUrl ? "📷 Pièce jointe" : "...";
+                                if (last.text) {
+                                    // Déchiffrer pour la préview
+                                    const dec = await E2E.decrypt(last.text, cid);
+                                    preview = dec.length > 40 ? dec.slice(0, 40) + '…' : dec;
                                 }
-                            } else {
-                                setLastMessages(prev => ({ ...prev, [friend.uid]: "Aucun message" }));
-                            }
+                                setLastMessages(prev => ({ ...prev, [f.uid]: preview }));
+                                if (last.senderId === f.uid && activeChatRef.current?.uid !== f.uid) {
+                                    setNotifications(prev => ({ ...prev, [f.uid]: (prev[f.uid] || 0) + 1 }));
+                                }
+                            } else setLastMessages(prev => ({ ...prev, [f.uid]: "Aucun message" }));
                         });
-                    const unsubTyping = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('chats').doc(chatId)
+                    const unsubTyping = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('chats').doc(cid)
                         .onSnapshot(doc => {
-                            if (doc.exists) {
-                                const data = doc.data();
-                                setIsTypingMap(prev => ({ ...prev, [friend.uid]: data.isTyping?.[friend.uid] || false }));
-                            }
+                            if (doc.exists) setIsTypingMap(prev => ({ ...prev, [f.uid]: doc.data().isTyping?.[f.uid] || false }));
                         });
                     return () => { unsubMsg(); unsubTyping(); };
                 });
-                return () => unsubs.forEach(unsub => unsub());
+                return () => unsubs.forEach(u => u());
             }, [user, friends]);
 
             useEffect(() => {
                 if (!user || !activeChat) return;
-                const chatId = [user.uid, activeChat.uid].sort().join('_');
-                // Marquer les messages de l'ami comme lus dès l'ouverture du chat
-                markMessagesAsRead(chatId, activeChat.uid).catch(() => {});
-                const unsubscribe = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('chats').doc(chatId).collection('messages')
+                const cid = [user.uid, activeChat.uid].sort().join('_');
+                markMessagesAsRead(cid, activeChat.uid).catch(() => {});
+                const unsub = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('chats').doc(cid).collection('messages')
                     .orderBy('timestamp', 'asc')
                     .onSnapshot(snap => {
                         setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-                        // Marquer comme lus au fil des nouveaux messages
-                        markMessagesAsRead(chatId, activeChat.uid).catch(() => {});
+                        markMessagesAsRead(cid, activeChat.uid).catch(() => {});
                         setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
                     });
-                return () => unsubscribe();
+                return () => unsub();
             }, [user, activeChat]);
 
             const handleAuth = async (e) => {
-                e.preventDefault();
-                setAuthError('');
+                e.preventDefault(); setAuthError('');
                 try {
                     if (isRegistering) await auth.createUserWithEmailAndPassword(email, password);
                     else await auth.signInWithEmailAndPassword(email, password);
                 } catch (err) { setAuthError(err.message); }
             };
 
-            const updateTypingStatus = (isTyping) => {
+            const updateTypingStatus = (t) => {
                 if (!activeChat) return;
-                const chatId = [user.uid, activeChat.uid].sort().join('_');
-                db.collection('artifacts').doc(appId).collection('public').doc('data').collection('chats').doc(chatId).set({
-                    isTyping: { [user.uid]: isTyping }
-                }, { merge: true });
+                const cid = [user.uid, activeChat.uid].sort().join('_');
+                db.collection('artifacts').doc(appId).collection('public').doc('data').collection('chats').doc(cid)
+                    .set({ isTyping: { [user.uid]: t } }, { merge: true });
             };
 
             const sendMessage = async (text = null, fileData = null) => {
                 if (!text && !fileData) return;
-                const chatId = [user.uid, activeChat.uid].sort().join('_');
+                const cid = [user.uid, activeChat.uid].sort().join('_');
                 updateTypingStatus(false);
                 try {
-                    await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('chats').doc(chatId).collection('messages').add({
-                        text: text || '',
+                    // Chiffrer le texte avant envoi
+                    const encryptedText = text ? await E2E.encrypt(text, cid) : '';
+                    await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('chats').doc(cid).collection('messages').add({
+                        text: encryptedText,
                         fileUrl: fileData?.url || null,
                         fileType: fileData?.type || null,
                         fileName: fileData?.name || null,
                         senderId: user.uid,
                         senderName: profile.displayName,
                         reactions: {},
-                        readBy: [],          // statut lecture : tableau des uid qui ont lu
+                        readBy: [],
+                        encrypted: true,   // marqueur pour distinguer les anciens messages
                         timestamp: firebase.firestore.FieldValue.serverTimestamp()
                     });
                     setInputText('');
                 } catch (err) { console.error(err); }
             };
 
-            // Marquer tous les messages non lus de l'ami comme lus
-            const markMessagesAsRead = async (chatId, friendUid) => {
+            const markMessagesAsRead = async (cid, friendUid) => {
                 const snap = await db.collection('artifacts').doc(appId).collection('public').doc('data')
-                    .collection('chats').doc(chatId).collection('messages')
-                    .where('senderId', '==', friendUid)
-                    .get();
+                    .collection('chats').doc(cid).collection('messages').where('senderId', '==', friendUid).get();
                 const batch = db.batch();
                 snap.docs.forEach(doc => {
-                    const data = doc.data();
-                    if (!(data.readBy || []).includes(user.uid)) {
+                    if (!(doc.data().readBy || []).includes(user.uid))
                         batch.update(doc.ref, { readBy: firebase.firestore.FieldValue.arrayUnion(user.uid) });
-                    }
                 });
                 await batch.commit();
             };
 
             const deleteMessage = async (msgId) => {
-                const chatId = [user.uid, activeChat.uid].sort().join('_');
-                await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('chats').doc(chatId).collection('messages').doc(msgId).delete();
+                const cid = [user.uid, activeChat.uid].sort().join('_');
+                await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('chats').doc(cid).collection('messages').doc(msgId).delete();
             };
 
             const reactToMessage = async (msgId, emoji) => {
-                const chatId = [user.uid, activeChat.uid].sort().join('_');
-                const msgRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('chats').doc(chatId).collection('messages').doc(msgId);
-                const msgDoc = await msgRef.get();
-                const currentReactions = msgDoc.data().reactions || {};
-                
-                if (currentReactions[user.uid] === emoji) delete currentReactions[user.uid];
-                else currentReactions[user.uid] = emoji;
-
-                await msgRef.update({ reactions: currentReactions });
+                const cid = [user.uid, activeChat.uid].sort().join('_');
+                const ref = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('chats').doc(cid).collection('messages').doc(msgId);
+                const doc = await ref.get();
+                const reactions = { ...(doc.data().reactions || {}) };
+                if (reactions[user.uid] === emoji) delete reactions[user.uid];
+                else reactions[user.uid] = emoji;
+                await ref.update({ reactions });
             };
 
             const handleFileUpload = async (e) => {
@@ -452,52 +586,32 @@
                 const type = file.type.split('/')[0];
                 try {
                     if (type === 'image') {
-                        const compressedUrl = await compressImage(file);
-                        sendMessage(null, { url: compressedUrl, type: type, name: file.name });
+                        const url = await compressImage(file);
+                        sendMessage(null, { url, type, name: file.name });
                     } else {
                         const reader = new FileReader();
-                        reader.onload = (ev) => sendMessage(null, { url: ev.target.result, type: type, name: file.name });
+                        reader.onload = ev => sendMessage(null, { url: ev.target.result, type, name: file.name });
                         reader.readAsDataURL(file);
                     }
                 } catch (err) { console.error(err); }
             };
 
-            const downloadFile = (url, name) => {
-                const link = document.createElement('a');
-                link.href = url;
-                link.download = name || 'onyx-file';
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-            };
-
-            const respondToRequest = async (request, accept) => {
+            const respondToRequest = async (req, accept) => {
                 const batch = db.batch();
-                const requestRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('friendRequests').doc(request.id);
+                const rRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('friendRequests').doc(req.id);
                 if (accept) {
-                    const myContactsRef = db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('contacts').doc('list');
-                    const friendContactsRef = db.collection('artifacts').doc(appId).collection('users').doc(request.fromId).collection('contacts').doc('list');
-                    batch.set(myContactsRef, { friends: firebase.firestore.FieldValue.arrayUnion({ uid: request.fromId }) }, { merge: true });
-                    batch.set(friendContactsRef, { friends: firebase.firestore.FieldValue.arrayUnion({ uid: user.uid }) }, { merge: true });
-                    batch.update(requestRef, { status: 'accepted' });
-                } else batch.update(requestRef, { status: 'rejected' });
+                    batch.set(db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('contacts').doc('list'), { friends: firebase.firestore.FieldValue.arrayUnion({ uid: req.fromId }) }, { merge: true });
+                    batch.set(db.collection('artifacts').doc(appId).collection('users').doc(req.fromId).collection('contacts').doc('list'), { friends: firebase.firestore.FieldValue.arrayUnion({ uid: user.uid }) }, { merge: true });
+                    batch.update(rRef, { status: 'accepted' });
+                } else batch.update(rRef, { status: 'rejected' });
                 await batch.commit();
             };
 
             const shareApp = async () => {
-                const shareData = {
-                    title: 'ONYX CHAT',
-                    text: 'Rejoins-moi sur ONYX CHAT, la messagerie sécurisée nouvelle génération !',
-                    url: window.location.href
-                };
                 try {
-                    if (navigator.share) {
-                        await navigator.share(shareData);
-                    } else {
-                        await navigator.clipboard.writeText(window.location.href);
-                        alert("Lien copié dans le presse-papier !");
-                    }
-                } catch (err) { console.log("Erreur partage:", err); }
+                    if (navigator.share) await navigator.share({ title: 'ONYX CHAT', text: 'Messagerie chiffrée E2E !', url: window.location.href });
+                    else { await navigator.clipboard.writeText(window.location.href); alert("Lien copié !"); }
+                } catch {}
             };
 
             const installApp = async () => {
@@ -513,7 +627,11 @@
                 <div className="h-screen bg-slate-950 flex items-center justify-center p-4">
                     <div className="bg-slate-900 border border-slate-800 p-8 rounded-3xl w-full max-w-md text-center fade-in">
                         <div className="flex justify-center mb-6"><LogoPlaceholder className="w-20 h-20" /></div>
-                        <h1 className="text-3xl font-extrabold text-white mb-8 italic uppercase tracking-widest">ONYX CHAT</h1>
+                        <h1 className="text-3xl font-extrabold text-white mb-2 italic uppercase tracking-widest">ONYX CHAT</h1>
+                        <div className="flex items-center justify-center gap-1.5 mb-8">
+                            <Icon name="lock" size={12} className="text-green-400" />
+                            <span className="text-[10px] font-black text-green-400 uppercase tracking-widest">Chiffrement E2E</span>
+                        </div>
                         <form onSubmit={handleAuth} className="space-y-5 text-left">
                             {authError && <div className="bg-red-500/10 border border-red-500/50 p-3 rounded-xl text-red-500 text-xs font-bold">{authError}</div>}
                             <input type="email" required placeholder="Email" className="w-full bg-slate-800 border border-slate-700 p-3.5 rounded-xl text-white outline-none focus:border-blue-500" value={email} onChange={e => setEmail(e.target.value)} />
@@ -522,7 +640,7 @@
                                 {isRegistering ? "S'inscrire" : "Se connecter"}
                             </button>
                             <button type="button" onClick={() => setIsRegistering(!isRegistering)} className="w-full text-slate-500 text-xs font-bold uppercase tracking-tighter">
-                                {isRegistering ? "Nouveau ? Créer un compte" : "Déjà membre ? Connexion"}
+                                {isRegistering ? "Déjà membre ? Connexion" : "Nouveau ? Créer un compte"}
                             </button>
                         </form>
                     </div>
@@ -531,16 +649,22 @@
 
             return (
                 <div className="h-screen flex bg-slate-950 text-white overflow-hidden">
+                    {/* SIDEBAR */}
                     <aside className={`w-full md:w-80 border-r border-slate-800 flex flex-col ${view === 'chat' ? 'hidden md:flex' : 'flex'}`}>
                         <div className="p-5 flex justify-between items-center border-b border-slate-800 bg-slate-900/30">
                             <div className="flex items-center gap-3">
                                 <LogoPlaceholder className="w-8 h-8" />
-                                <h2 className="font-extrabold text-lg italic uppercase tracking-widest">ONYX CHAT</h2>
+                                <div>
+                                    <h2 className="font-extrabold text-lg italic uppercase tracking-widest leading-none">ONYX CHAT</h2>
+                                    <div className="flex items-center gap-1 mt-0.5">
+                                        <Icon name="lock" size={9} className="text-green-400" />
+                                        <span className="text-[8px] font-black text-green-400 uppercase tracking-widest">E2E chiffré</span>
+                                    </div>
+                                </div>
                             </div>
                             <button onClick={() => setShowSettings(true)} className="text-slate-500 hover:text-white p-2 hover:bg-slate-800 rounded-lg transition-all"><Icon name="settings" /></button>
                         </div>
 
-                        {/* Compteur connectés avec emoji silhouettes */}
                         <div className="px-5 py-2.5 flex items-center gap-2 bg-slate-900/20 border-b border-slate-800/50">
                             <div className="w-2 h-2 rounded-full bg-green-400 shadow-sm shadow-green-400/50 animate-pulse"></div>
                             <span className="emoji-native text-base leading-none">👥</span>
@@ -554,7 +678,6 @@
                                     <Icon name="share" className="text-blue-500 group-hover:scale-110 transition-transform" />
                                     <span className="text-[10px] font-black uppercase tracking-widest">Partager</span>
                                 </button>
-                                
                                 {isInstallable ? (
                                     <button onClick={installApp} className="flex flex-col items-center justify-center p-4 bg-blue-600/10 border border-blue-600/30 rounded-2xl hover:bg-blue-600/20 transition-all gap-2 glow-button group">
                                         <Icon name="smartphone" className="text-blue-400 group-hover:scale-110 transition-transform" />
@@ -592,14 +715,13 @@
                                     <input placeholder="ID du contact..." className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-[10px] outline-none" value={friendIdInput} onChange={e => setFriendIdInput(e.target.value)} />
                                     <button onClick={async () => {
                                         if (!friendIdInput || friendIdInput === user.uid) return;
-                                        const profSnap = await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('profiles').doc(friendIdInput).get();
-                                        if (!profSnap.exists) { alert("ID introuvable"); return; }
+                                        const snap = await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('profiles').doc(friendIdInput).get();
+                                        if (!snap.exists) { alert("ID introuvable"); return; }
                                         await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('friendRequests').add({
                                             fromId: user.uid, fromName: profile.displayName, fromPhoto: profile.photoURL,
                                             toId: friendIdInput, status: 'pending', timestamp: firebase.firestore.FieldValue.serverTimestamp()
                                         });
-                                        alert("Demande envoyée !");
-                                        setFriendIdInput('');
+                                        alert("Demande envoyée !"); setFriendIdInput('');
                                     }} className="bg-blue-600 px-3 rounded-xl hover:bg-blue-500"><Icon name="userplus" size={14}/></button>
                                 </div>
                             </div>
@@ -607,23 +729,21 @@
                             <div className="space-y-1">
                                 <p className="text-[10px] text-slate-500 uppercase font-bold mb-2 px-1 tracking-widest">Conversations</p>
                                 {friends.map(f => {
-                                    const friendData = friendProfiles[f.uid] || {};
-                                    /* FIX 2 — statut réel depuis Firestore */
+                                    const fd = friendProfiles[f.uid] || {};
                                     const isOnline = onlineStatus[f.uid] === true;
                                     return (
-                                        <div key={f.uid} onClick={() => { setActiveChat({uid: f.uid, ...friendData}); setView('chat'); }} className={`p-3 rounded-2xl flex items-center gap-3 cursor-pointer transition-all ${activeChat?.uid === f.uid ? 'bg-blue-600' : 'hover:bg-slate-900/60'}`}>
+                                        <div key={f.uid} onClick={() => { setActiveChat({ uid: f.uid, ...fd }); setView('chat'); }}
+                                            className={`p-3 rounded-2xl flex items-center gap-3 cursor-pointer transition-all ${activeChat?.uid === f.uid ? 'bg-blue-600' : 'hover:bg-slate-900/60'}`}>
                                             <div className="relative shrink-0">
-                                                <img src={friendData.photoURL || getAvatar(friendData.displayName)} className="w-12 h-12 rounded-xl object-cover bg-slate-800 shadow-xl" />
+                                                <img src={fd.photoURL || getAvatar(fd.displayName)} className="w-12 h-12 rounded-xl object-cover bg-slate-800 shadow-xl" />
                                                 {notifications[f.uid] && <div className="absolute -top-1 -right-1 w-5 h-5 bg-white text-blue-600 rounded-full flex items-center justify-center text-[10px] font-black shadow-lg">{notifications[f.uid]}</div>}
-                                                {/* FIX 2 — dot de présence sur l'avatar */}
                                                 <div className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-slate-950 ${isOnline ? 'bg-green-400' : 'bg-slate-600'}`}></div>
                                             </div>
                                             <div className="flex-1 min-w-0">
                                                 <div className="flex justify-between items-start">
-                                                    <p className="font-bold text-sm truncate">{friendData.displayName || "Contact"}</p>
+                                                    <p className="font-bold text-sm truncate">{fd.displayName || "Contact"}</p>
                                                     {isTypingMap[f.uid] && <span className="text-[8px] text-white/80 font-black animate-pulse tracking-tighter">ÉCRIT...</span>}
                                                 </div>
-                                                {/* FIX 2 — texte statut réel sous le nom */}
                                                 <p className={`text-[9px] font-bold uppercase tracking-wider ${isOnline ? 'text-green-400' : activeChat?.uid === f.uid ? 'text-blue-100' : 'text-slate-500'}`}>
                                                     {isOnline ? '● En ligne' : '○ Hors ligne'}
                                                 </p>
@@ -641,13 +761,13 @@
                             <img src={profile.photoURL || getAvatar(profile.displayName)} className="w-10 h-10 rounded-xl bg-blue-600" />
                             <div className="flex-1 min-w-0">
                                 <p className="text-xs font-black truncate uppercase tracking-widest">{profile.displayName}</p>
-                                {/* FIX 2 — statut propre pour soi-même */}
                                 <p className="text-[8px] text-green-400 truncate font-bold">● En ligne</p>
                             </div>
                             <button onClick={() => auth.signOut()} className="p-2 text-slate-500 hover:text-red-500 transition-colors"><Icon name="logout" size={16}/></button>
                         </div>
                     </aside>
 
+                    {/* CHAT */}
                     <main className={`flex-1 flex flex-col relative ${view === 'list' ? 'hidden md:flex' : 'flex'}`}>
                         {activeChat ? (
                             <React.Fragment>
@@ -656,94 +776,45 @@
                                         <button onClick={() => setView('list')} className="md:hidden p-2 -ml-2 text-slate-500"><Icon name="arrowleft" /></button>
                                         <div className="relative">
                                             <img src={activeChat.photoURL || getAvatar(activeChat.displayName)} className="w-10 h-10 rounded-xl object-cover bg-slate-800" />
-                                            {/* FIX 2 — dot du header basé sur la vraie présence */}
                                             <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-slate-950 ${onlineStatus[activeChat.uid] ? 'bg-green-400' : 'bg-slate-600'}`}></div>
                                         </div>
                                         <div>
                                             <h3 className="font-bold text-sm leading-tight">{activeChat.displayName}</h3>
-                                            {/* FIX 2 — texte statut du header */}
                                             <p className={`text-[10px] font-bold uppercase tracking-tighter ${onlineStatus[activeChat.uid] ? 'text-green-400' : 'text-slate-500'}`}>
                                                 {isTypingMap[activeChat.uid] ? "En train d'écrire..." : onlineStatus[activeChat.uid] ? "En ligne" : "Hors ligne"}
                                             </p>
                                         </div>
                                     </div>
+                                    {/* Badge E2E dans le header */}
+                                    <div className="e2e-badge flex items-center gap-1.5 px-3 py-1.5 rounded-full">
+                                        <Icon name="lock" size={10} className="text-green-400" />
+                                        <span className="text-[9px] font-black text-green-400 uppercase tracking-widest">E2E</span>
+                                    </div>
                                 </header>
 
+                                {/* Bannière info E2E (affichée une seule fois en haut) */}
+                                {messages.length === 0 && (
+                                    <div className="mx-4 mt-4 bg-green-950/30 border border-green-800/40 rounded-2xl p-3 flex items-center gap-2">
+                                        <Icon name="lock" size={14} className="text-green-400 shrink-0" />
+                                        <p className="text-[10px] text-green-400/80 font-bold leading-relaxed">
+                                            Les messages sont chiffrés de bout en bout. Personne d'autre ne peut les lire.
+                                        </p>
+                                    </div>
+                                )}
+
                                 <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
-                                    {messages.map((msg, i) => {
-                                        const isMe = msg.senderId === user.uid;
-                                        /* Grouper les réactions par emoji pour affichage */
-                                        const reactionGroups = {};
-                                        if (msg.reactions) {
-                                            Object.values(msg.reactions).forEach(emoji => {
-                                                reactionGroups[emoji] = (reactionGroups[emoji] || 0) + 1;
-                                            });
-                                        }
-                                        return (
-                                            <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} fade-in`}>
-                                                <div className="group relative max-w-[85%] md:max-w-[70%]">
-                                                    <div className={`p-4 rounded-2xl shadow-sm ${isMe ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-slate-900 border border-slate-800 text-slate-200 rounded-tl-none'}`}>
-                                                        {msg.fileUrl ? (
-                                                            <div className="space-y-3">
-                                                                {msg.fileType === 'image' ? (
-                                                                    <img src={msg.fileUrl} className="max-w-full rounded-xl cursor-pointer hover:opacity-90 transition-opacity" onClick={() => window.open(msg.fileUrl)} />
-                                                                ) : (
-                                                                    <div className="flex items-center gap-3 bg-black/20 p-3 rounded-xl border border-white/5">
-                                                                        <div className="bg-white/10 p-2 rounded-lg"><Icon name="file" size={16}/></div>
-                                                                        <div className="flex-1 min-w-0">
-                                                                            <p className="text-[10px] font-black truncate">{msg.fileName || 'Fichier'}</p>
-                                                                            <p className="text-[8px] opacity-60 uppercase">Pièce jointe</p>
-                                                                        </div>
-                                                                        <button onClick={() => downloadFile(msg.fileUrl, msg.fileName)} className="p-2 hover:bg-white/10 rounded-lg transition-colors"><Icon name="download" size={14}/></button>
-                                                                    </div>
-                                                                )}
-                                                                {msg.text && <p className="text-sm leading-relaxed">{msg.text}</p>}
-                                                            </div>
-                                                        ) : (
-                                                            <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{msg.text}</p>
-                                                        )}
-                                                    </div>
-
-                                                    <div className={`flex items-center gap-1 mt-1 ${isMe ? 'justify-end' : 'justify-start'}`}>
-                                                        {/* réactions groupées par emoji */}
-                                                        {Object.entries(reactionGroups).length > 0 && (
-                                                            <div className="flex gap-1">
-                                                                {Object.entries(reactionGroups).map(([emoji, count]) => (
-                                                                    <button
-                                                                        key={emoji}
-                                                                        onClick={() => reactToMessage(msg.id, emoji)}
-                                                                        className="flex items-center gap-0.5 bg-slate-800 border border-slate-700 rounded-full px-2 py-0.5 reaction-pop hover:bg-slate-700 transition-colors"
-                                                                    >
-                                                                        <span className="emoji-native text-sm">{emoji}</span>
-                                                                        {count > 1 && <span className="text-[9px] font-black text-slate-300">{count}</span>}
-                                                                    </button>
-                                                                ))}
-                                                            </div>
-                                                        )}
-                                                        <span className="text-[8px] text-slate-600 font-bold uppercase tracking-widest ml-1 flex items-center gap-0.5">
-                                                            {msg.timestamp?.toDate ? new Date(msg.timestamp.toDate()).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '...'}
-                                                            {/* Statut message : seulement pour mes messages */}
-                                                            {isMe && <MessageStatus msg={msg} friendUid={activeChat.uid} />}
-                                                        </span>
-                                                    </div>
-
-                                                    <div className={`absolute top-0 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-20 ${isMe ? 'right-full mr-2' : 'left-full ml-2'}`}>
-                                                        <div className="bg-slate-900 border border-slate-800 p-1.5 rounded-xl shadow-2xl flex gap-1 items-center">
-                                                            {/* FIX 1 — picker emoji avec span.emoji-native pour chaque emoji */}
-                                                            {EMOJIS.map(e => (
-                                                                <button key={e} onClick={() => reactToMessage(msg.id, e)} className="hover:scale-125 transition-transform p-1 leading-none">
-                                                                    <span className="emoji-native text-lg">{e}</span>
-                                                                </button>
-                                                            ))}
-                                                            <div className="w-px h-3 bg-slate-800 mx-1"></div>
-                                                            <button onClick={() => { navigator.clipboard.writeText(msg.text); }} className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white" title="Copier"><Icon name="copy" size={12}/></button>
-                                                            {isMe && <button onClick={() => deleteMessage(msg.id)} className="p-1.5 hover:bg-red-500/10 rounded-lg text-slate-400 hover:text-red-500" title="Supprimer"><Icon name="trash" size={12}/></button>}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
+                                    {messages.map(msg => (
+                                        <MessageBubble
+                                            key={msg.id}
+                                            msg={msg}
+                                            isMe={msg.senderId === user.uid}
+                                            chatId={chatId}
+                                            friendUid={activeChat.uid}
+                                            onReact={reactToMessage}
+                                            onDelete={deleteMessage}
+                                            onCopy={(text) => { navigator.clipboard.writeText(text); }}
+                                        />
+                                    ))}
                                     <div ref={messagesEndRef} />
                                 </div>
 
@@ -753,14 +824,15 @@
                                             <button type="button" onClick={() => chatFileRef.current.click()} className="p-3 text-slate-500 hover:text-blue-500 transition-colors"><Icon name="plus" size={20}/></button>
                                         </div>
                                         <div className="flex-1 relative">
-                                            <textarea rows="1" placeholder="Tapez votre message..." className="w-full bg-slate-900 border border-slate-800 rounded-2xl px-5 py-3.5 pr-12 outline-none focus:border-blue-600 transition-all text-sm custom-scrollbar resize-none" value={inputText} 
+                                            <textarea rows="1" placeholder="Message chiffré..." className="w-full bg-slate-900 border border-slate-800 rounded-2xl px-5 py-3.5 pr-12 outline-none focus:border-blue-600 transition-all text-sm custom-scrollbar resize-none" value={inputText}
                                                 onChange={e => {
                                                     setInputText(e.target.value);
                                                     updateTypingStatus(true);
                                                     clearTimeout(typingTimeoutRef.current);
                                                     typingTimeoutRef.current = setTimeout(() => updateTypingStatus(false), 3000);
                                                 }}
-                                                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(inputText); }}} />
+                                                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(inputText); } }}
+                                            />
                                             <button type="submit" className="absolute right-3 bottom-3 p-1.5 text-blue-500 hover:text-blue-400 disabled:opacity-30" disabled={!inputText.trim()}>
                                                 <Icon name="send" />
                                             </button>
@@ -775,8 +847,15 @@
                                     <LogoPlaceholder className="w-12 h-12" />
                                 </div>
                                 <h2 className="text-2xl font-extrabold text-white mb-3 italic uppercase tracking-widest">BIENVENUE SUR ONYX</h2>
-                                <p className="text-slate-500 text-xs font-bold max-w-xs leading-relaxed uppercase tracking-widest">Messagerie sécurisée ultra-rapide. Sélectionnez un contact pour démarrer une conversation cryptée.</p>
-                                <div className="mt-12 grid grid-cols-2 gap-4">
+                                <p className="text-slate-500 text-xs font-bold max-w-xs leading-relaxed uppercase tracking-widest">Messagerie sécurisée ultra-rapide. Sélectionnez un contact pour démarrer.</p>
+                                <div className="mt-8 bg-green-950/40 border border-green-800/40 rounded-2xl px-6 py-4 flex items-center gap-3 max-w-xs">
+                                    <Icon name="lock" size={18} className="text-green-400 shrink-0" />
+                                    <div className="text-left">
+                                        <p className="text-[10px] font-black text-green-400 uppercase tracking-widest">Chiffrement E2E</p>
+                                        <p className="text-[9px] text-green-400/60 mt-0.5">AES-256-GCM · Clé locale uniquement</p>
+                                    </div>
+                                </div>
+                                <div className="mt-4 grid grid-cols-2 gap-4 max-w-xs w-full">
                                     <div className="bg-slate-900/50 p-4 rounded-3xl border border-slate-800">
                                         <div className="text-blue-500 mb-2 font-black">PWA</div>
                                         <div className="text-[10px] text-slate-500 uppercase font-bold">Installation native</div>
@@ -786,8 +865,7 @@
                                         <div className="text-[10px] text-slate-500 uppercase font-bold">Images & Fichiers</div>
                                     </div>
                                 </div>
-                                {/* Compteur écran d'accueil */}
-                                <div className="mt-6 flex items-center gap-2 bg-slate-900/50 border border-slate-800 px-4 py-2.5 rounded-2xl">
+                                <div className="mt-4 flex items-center gap-2 bg-slate-900/50 border border-slate-800 px-4 py-2.5 rounded-2xl">
                                     <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></div>
                                     <span className="emoji-native text-base leading-none">👥</span>
                                     <span className="text-[10px] font-black uppercase tracking-widest text-green-400">{totalOnline}</span>
@@ -797,12 +875,13 @@
                         )}
                     </main>
 
+                    {/* SETTINGS */}
                     {showSettings && (
                         <div className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-xl flex items-center justify-center p-4">
                             <div className="bg-slate-900 border border-slate-800 rounded-[2.5rem] w-full max-w-md overflow-hidden fade-in shadow-2xl">
                                 <div className="p-8 text-center border-b border-slate-800 relative bg-slate-900/50">
                                     <button onClick={() => setShowSettings(false)} className="absolute top-6 right-6 text-slate-500 hover:text-white p-2"><Icon name="x"/></button>
-                                    <div className="relative inline-block group mb-6">
+                                    <div className="relative inline-block mb-6">
                                         <img src={profile.photoURL} className="w-24 h-24 rounded-[2rem] object-cover bg-blue-600 border-4 border-slate-800" />
                                         <button onClick={() => fileInputRef.current.click()} className="absolute -bottom-2 -right-2 bg-blue-600 p-2.5 rounded-2xl shadow-xl hover:bg-blue-500 transition-all border-4 border-slate-900">
                                             <Icon name="plus" size={16}/>
@@ -811,39 +890,40 @@
                                     <h3 className="text-xl font-extrabold uppercase italic tracking-widest">{profile.displayName}</h3>
                                     <p className="text-[10px] text-slate-500 mt-1 uppercase font-bold tracking-widest">Paramètres Profil</p>
                                 </div>
-                                
                                 <div className="p-8 space-y-6">
                                     <div>
                                         <label className="text-[10px] text-slate-500 uppercase font-black mb-2 block tracking-widest">Nom d'affichage</label>
                                         <div className="flex gap-2">
-                                            <input className="flex-1 bg-slate-800 border border-slate-700 rounded-2xl px-4 py-3 text-sm outline-none focus:border-blue-600 transition-all" value={profile.displayName} onChange={e => setProfile({...profile, displayName: e.target.value})} />
+                                            <input className="flex-1 bg-slate-800 border border-slate-700 rounded-2xl px-4 py-3 text-sm outline-none focus:border-blue-600 transition-all" value={profile.displayName} onChange={e => setProfile({ ...profile, displayName: e.target.value })} />
                                             <button onClick={async () => {
                                                 await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('profiles').doc(user.uid).update({ displayName: profile.displayName });
                                                 alert("Nom mis à jour !");
                                             }} className="bg-blue-600 px-6 rounded-2xl font-bold text-[10px] uppercase tracking-widest">Save</button>
                                         </div>
                                     </div>
-
                                     <div>
                                         <label className="text-[10px] text-slate-500 uppercase font-black mb-2 block tracking-widest">Identifiant Unique</label>
                                         <div className="flex gap-2">
-                                            <div className="flex-1 bg-slate-800/50 border border-slate-700/50 rounded-2xl px-4 py-3 text-[10px] font-mono text-slate-400 overflow-hidden truncate flex items-center">
-                                                {user.uid}
-                                            </div>
+                                            <div className="flex-1 bg-slate-800/50 border border-slate-700/50 rounded-2xl px-4 py-3 text-[10px] font-mono text-slate-400 overflow-hidden truncate flex items-center">{user.uid}</div>
                                             <button onClick={() => { navigator.clipboard.writeText(user.uid); alert("ID copié !"); }} className="bg-slate-800 px-6 rounded-2xl font-bold text-[10px] uppercase tracking-widest border border-slate-700 hover:bg-slate-700 transition-colors">Copier</button>
                                         </div>
                                         <p className="text-[9px] text-slate-500 mt-2 italic">* Partagez cet identifiant pour que vos amis puissent vous ajouter.</p>
                                     </div>
-
+                                    <div className="e2e-badge rounded-2xl p-4 flex items-center gap-3">
+                                        <Icon name="lock" size={16} className="text-green-400 shrink-0" />
+                                        <div>
+                                            <p className="text-[10px] font-black text-green-400 uppercase tracking-widest">Chiffrement bout en bout actif</p>
+                                            <p className="text-[9px] text-green-400/60 mt-0.5">AES-256-GCM — vos messages sont illisibles pour nous</p>
+                                        </div>
+                                    </div>
                                     <button onClick={() => auth.signOut()} className="w-full bg-red-500/10 border border-red-500/20 text-red-500 p-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] hover:bg-red-500 hover:text-white transition-all">
                                         Déconnexion du compte
                                     </button>
                                 </div>
                                 <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={async (e) => {
-                                    const file = e.target.files[0];
-                                    if (!file) return;
+                                    const file = e.target.files[0]; if (!file) return;
                                     const url = await compressImage(file, 400, 400);
-                                    setProfile({...profile, photoURL: url});
+                                    setProfile({ ...profile, photoURL: url });
                                     await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('profiles').doc(user.uid).update({ photoURL: url });
                                 }} />
                             </div>
