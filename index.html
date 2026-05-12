@@ -14,11 +14,9 @@
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <!-- Firebase App + Auth + Firestore (compat) -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
-    <!-- FIX PRÉSENCE: Firebase Realtime Database pour onDisconnect fiable -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
     <style>
@@ -48,6 +46,7 @@
         @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes pop { from { transform: scale(0); } to { transform: scale(1); } }
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+        @keyframes onlinePulse { 0%,100%{box-shadow:0 0 0 0 rgba(74,222,128,0.4)} 50%{box-shadow:0 0 0 3px rgba(74,222,128,0)} }
 
         .auth-card { animation: fadeUp 0.7s cubic-bezier(0.16,1,0.3,1) both; }
         .auth-logo { animation: float 4s ease-in-out infinite; }
@@ -66,6 +65,7 @@
         .reaction-pop { animation: pop 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
         .emoji-native { font-family: "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif !important; font-style: normal !important; line-height: 1; display: inline-block; }
         textarea { resize: none; overflow-y: hidden; }
+        .dot-online { animation: onlinePulse 2s ease-in-out infinite; }
 
         .rgpd-overlay { position: fixed; inset: 0; z-index: 9999; background: rgba(2,6,23,0.95); backdrop-filter: blur(24px); display: flex; align-items: flex-end; justify-content: center; padding: 16px; padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
         .rgpd-customizer-overlay { position: fixed; inset: 0; z-index: 10000; background: rgba(2,6,23,0.95); backdrop-filter: blur(24px); display: flex; align-items: flex-end; justify-content: center; padding: 16px; padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
@@ -103,13 +103,11 @@ const firebaseConfig = {
     storageBucket: "onyx-chat-by-rijoul.firebasestorage.app",
     messagingSenderId: "699855199393",
     appId: "1:699855199393:web:0b454be9733e3853ada4e0",
-    // ── FIX PRÉSENCE: databaseURL requis pour Realtime Database ──
     databaseURL: "https://onyx-chat-by-rijoul-default-rtdb.europe-west1.firebasedatabase.app"
 };
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db = firebase.firestore();
-// FIX PRÉSENCE: utilise Realtime Database (RTDB) qui supporte onDisconnect natif
 const rtdb = firebase.database();
 
 const APP_ID = 'onyx-pro-chat';
@@ -171,7 +169,7 @@ const Icon = ({ name, size=18, className='' }) => {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// ── COMPOSANTS RGPD (inchangés) ──
+// ── COMPOSANTS RGPD ──
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const AgeGate = ({ onConfirm, onDeny }) => {
@@ -293,7 +291,7 @@ const PrivacyPage = ({ onClose }) => (
             <ul className="legal-ul">
                 <li><strong style={{color:'#e2e8f0'}}>Email</strong> — Authentification (art. 6.1.b)</li>
                 <li><strong style={{color:'#e2e8f0'}}>Nom d'affichage & photo</strong> — Profil (art. 6.1.b)</li>
-                <li><strong style={{color:'#e2e8f0'}}>Messages</strong> — Stockés en clair côté serveur Firebase (art. 6.1.b)</li>
+                <li><strong style={{color:'#e2e8f0'}}>Messages</strong> — Stockés côté serveur Firebase (art. 6.1.b)</li>
                 <li><strong style={{color:'#e2e8f0'}}>Statut de présence</strong> — Si consentement accordé (art. 6.1.a)</li>
             </ul>
             <h2 className="legal-h2">3. Vos droits (art. 15-22 RGPD)</h2>
@@ -452,6 +450,24 @@ const AuthScreen = ({ onShowPrivacy, onShowTerms }) => {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// ── COMPOSANT POINT DE PRÉSENCE ──
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Petit dot vert/gris avec animation pulse quand online
+const PresenceDot = ({ isOnline, size = 11, borderColor = '#020617' }) => (
+    <div style={{
+        width: `${size}px`,
+        height: `${size}px`,
+        borderRadius: '50%',
+        border: `2px solid ${borderColor}`,
+        background: isOnline ? '#4ade80' : '#374151',
+        transition: 'background 0.4s ease',
+        flexShrink: 0,
+        ...(isOnline ? { animation: 'onlinePulse 2.5s ease-in-out infinite' } : {})
+    }}/>
+);
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // ── APP PRINCIPALE ──
 // ═══════════════════════════════════════════════════════════════════════════════
 function App() {
@@ -480,7 +496,8 @@ function App() {
     const [openMenuId, setOpenMenuId] = useState(null);
     const [deleteModal, setDeleteModal] = useState({ open: false, type: null, target: null });
 
-    // ── FIX PRÉSENCE: map uid → { online: bool, lastSeen: number } ──
+    // ── PRÉSENCE: map uid → boolean (online/offline) ──
+    // Source unique de vérité : Realtime Database uniquement
     const [onlineStatus, setOnlineStatus] = useState({});
     const [totalOnline, setTotalOnline] = useState(0);
 
@@ -492,8 +509,9 @@ function App() {
     const textareaRef = useRef(null);
     const fileInputRef = useRef(null);
     const chatFileRef = useRef(null);
-    // Ref pour cleanup présence RTDB
     const presRtdbRef = useRef(null);
+    const allPresListenerRef = useRef(null);
+    const connListenerRef = useRef(null);
 
     // ── RGPD handlers ──
     const handleAgeConfirm = () => { setAgeConfirmed(true); setShowAgeGate(false); if (!consentState) setShowConsentBanner(true); };
@@ -519,7 +537,11 @@ function App() {
                     if (doc.exists) setProfile(doc.data());
                     else { const np = { uid:u.uid, displayName:u.email.split('@')[0], photoURL:getAvatar(u.email.split('@')[0]), createdAt:firebase.firestore.FieldValue.serverTimestamp() }; ref.set(np); setProfile(np); }
                 });
-            } else setUser(null);
+            } else {
+                setUser(null);
+                setOnlineStatus({});
+                setTotalOnline(0);
+            }
             setLoading(false);
         });
         return unsub;
@@ -534,70 +556,81 @@ function App() {
     }, [user, consentState]);
 
     // ════════════════════════════════════════════════════════════════════════
-    // ── FIX PRÉSENCE: Realtime Database avec onDisconnect ──
+    // ── PRÉSENCE CORRIGÉE : Realtime Database + onDisconnect serveur ──
+    //
+    // Fonctionnement :
+    // 1. On écoute .info/connected pour savoir quand le client RTDB est connecté
+    // 2. À chaque connexion RTDB on installe un onDisconnect (exécuté côté
+    //    serveur Firebase même si le navigateur se ferme brutalement)
+    // 3. On écoute /presence/* pour afficher les statuts de tous les utilisateurs
+    // 4. On gère visibilitychange pour mettre à jour quand l'onglet passe en fond
     // ════════════════════════════════════════════════════════════════════════
     useEffect(() => {
-        if (!user || !consentState?.presence) {
-            // Si présence désactivée, on s'assure d'être marqué offline
-            if (presRtdbRef.current) { presRtdbRef.current.set({ online: false, lastSeen: firebase.database.ServerValue.TIMESTAMP }).catch(()=>{}); }
-            return;
-        }
+        if (!user) return;
 
         const presRef = rtdb.ref(`presence/${user.uid}`);
         presRtdbRef.current = presRef;
 
-        // Écoute la connexion RTDB pour gérer onDisconnect automatiquement
         const connRef = rtdb.ref('.info/connected');
-        const connUnsub = connRef.on('value', (snap) => {
-            if (snap.val() === false) return; // pas connecté
 
-            // ── CLEF DU FIX: onDisconnect s'exécute côté serveur Firebase
-            // même si le navigateur se ferme brutalement ──
+        const connHandler = (snap) => {
+            if (!snap.val()) return; // pas encore connecté au RTDB
+
+            // onDisconnect s'exécute côté serveur : robuste même en cas de crash
             presRef.onDisconnect().set({
                 online: false,
                 lastSeen: firebase.database.ServerValue.TIMESTAMP
+            }).then(() => {
+                // Une fois onDisconnect enregistré, on se marque en ligne
+                if (consentState?.presence) {
+                    presRef.set({ online: true, lastSeen: firebase.database.ServerValue.TIMESTAMP });
+                }
             });
+        };
+        connRef.on('value', connHandler);
+        connListenerRef.current = { ref: connRef, handler: connHandler };
 
-            // Maintenant on se marque en ligne
+        // Si consentement présence refusé : on reste marqué offline, on écoute quand même
+        if (!consentState?.presence) {
+            presRef.set({ online: false, lastSeen: firebase.database.ServerValue.TIMESTAMP });
+        }
+
+        // Gestion onglet arrière-plan / retour au premier plan
+        const onVisibilityChange = () => {
+            if (!consentState?.presence) return;
             presRef.set({
-                online: true,
+                online: document.visibilityState !== 'hidden',
                 lastSeen: firebase.database.ServerValue.TIMESTAMP
             });
-        });
-
-        // visibilitychange : onglet en arrière-plan / retour
-        const onVis = () => {
-            if (document.visibilityState === 'hidden') {
-                presRef.set({ online: false, lastSeen: firebase.database.ServerValue.TIMESTAMP });
-            } else {
-                presRef.set({ online: true, lastSeen: firebase.database.ServerValue.TIMESTAMP });
-            }
         };
-        document.addEventListener('visibilitychange', onVis);
+        document.addEventListener('visibilitychange', onVisibilityChange);
 
-        // ── Écoute la présence de TOUS les utilisateurs ──
+        // Écoute globale de TOUS les statuts de présence
         const allPresRef = rtdb.ref('presence');
-        const allUnsub = allPresRef.on('value', (snap) => {
+        const allPresHandler = (snap) => {
             const map = {};
             let cnt = 0;
             snap.forEach(child => {
                 const v = child.val();
-                const isOnline = v?.online === true;
+                // v.online doit être strictement true (booléen)
+                const isOnline = v != null && v.online === true;
                 map[child.key] = isOnline;
                 if (isOnline) cnt++;
             });
             setOnlineStatus(map);
             setTotalOnline(cnt);
-        });
+        };
+        allPresRef.on('value', allPresHandler);
+        allPresListenerRef.current = { ref: allPresRef, handler: allPresHandler };
 
         return () => {
-            connRef.off('value', connUnsub);
-            allPresRef.off('value', allUnsub);
-            document.removeEventListener('visibilitychange', onVis);
-            // Se marquer offline au démontage (logout propre)
+            // Nettoyage : détacher les listeners et se marquer offline
+            connRef.off('value', connHandler);
+            allPresRef.off('value', allPresHandler);
+            document.removeEventListener('visibilitychange', onVisibilityChange);
             presRef.set({ online: false, lastSeen: firebase.database.ServerValue.TIMESTAMP });
         };
-    }, [user, consentState]);
+    }, [user, consentState?.presence]);
 
     // ── CONTACTS ──
     useEffect(() => {
@@ -619,41 +652,35 @@ function App() {
         return () => unsubs.forEach(u => u());
     }, [friends, user]);
 
-    // ════════════════════════════════════════════════════════════════════════
-    // ── FIX MESSAGES: orderBy timestamp avec gestion des docs sans timestamp ──
-    // ════════════════════════════════════════════════════════════════════════
+    // ── MESSAGES ──
     useEffect(() => {
         if (!user || !activeChat) return;
         const chatId = [user.uid, activeChat.uid].sort().join('_');
 
-        // ── FIX: on utilise orderBy mais on gère les messages en attente
-        // (timestamp null = message en cours d'envoi) en les affichant quand même ──
         const unsub = db.collection('artifacts').doc(APP_ID)
             .collection('public').doc('data')
             .collection('chats').doc(chatId)
             .collection('messages')
-            .orderBy('timestamp', 'asc')  // index requis dans Firestore
+            .orderBy('timestamp', 'asc')
             .onSnapshot(
                 (snap) => {
-                    // FIX: inclure les messages même si timestamp est null (pending)
                     const raw = snap.docs.map(d => ({ id: d.id, ...d.data() }));
                     setMessages(raw);
                     setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
                 },
                 (err) => {
-                    // ── FIX: si l'index n'existe pas encore, fallback sans orderBy ──
-                    console.warn('orderBy failed, fallback sans tri:', err.message);
+                    // Fallback sans orderBy si l'index Firestore n'est pas encore créé
+                    console.warn('orderBy indisponible, tri côté client :', err.message);
                     db.collection('artifacts').doc(APP_ID)
                         .collection('public').doc('data')
                         .collection('chats').doc(chatId)
                         .collection('messages')
                         .onSnapshot((snap2) => {
-                            // tri côté client
                             const raw = snap2.docs
                                 .map(d => ({ id: d.id, ...d.data() }))
                                 .sort((a, b) => {
-                                    const ta = a.timestamp?.toMillis?.() ?? a.timestamp?.seconds * 1000 ?? 0;
-                                    const tb = b.timestamp?.toMillis?.() ?? b.timestamp?.seconds * 1000 ?? 0;
+                                    const ta = a.timestamp?.toMillis?.() ?? (a.timestamp?.seconds ?? 0) * 1000;
+                                    const tb = b.timestamp?.toMillis?.() ?? (b.timestamp?.seconds ?? 0) * 1000;
                                     return ta - tb;
                                 });
                             setMessages(raw);
@@ -664,7 +691,7 @@ function App() {
         return () => unsub();
     }, [user, activeChat]);
 
-    // ── ENVOI MESSAGE ──
+    // ── ENVOI MESSAGE (texte simple, sans chiffrement) ──
     const sendMessage = async () => {
         if (!inputText.trim() || !activeChat) return;
         const chatId = [user.uid, activeChat.uid].sort().join('_');
@@ -672,8 +699,6 @@ function App() {
         setInputText('');
         if (textareaRef.current) textareaRef.current.style.height = 'auto';
 
-        // FIX: message stocké directement avec le texte en clair
-        // (le label "E2E" était cosmétique, aucun chiffrement n'était implémenté)
         await db.collection('artifacts').doc(APP_ID)
             .collection('public').doc('data')
             .collection('chats').doc(chatId)
@@ -733,7 +758,6 @@ function App() {
         ta.style.height = Math.min(ta.scrollHeight, 120) + 'px';
     };
 
-    // ── Formatage de l'heure ──
     const formatTime = (timestamp) => {
         if (!timestamp) return '...';
         try {
@@ -742,7 +766,9 @@ function App() {
         } catch { return '...'; }
     };
 
-    // ── Pages légales ──
+    // Helper : est-ce qu'un uid est en ligne ?
+    const isOnline = (uid) => consentState?.presence === true && onlineStatus[uid] === true;
+
     if (showPrivacyPage) return <PrivacyPage onClose={() => setShowPrivacyPage(false)}/>;
     if (showTermsPage) return <TermsPage onClose={() => setShowTermsPage(false)}/>;
     if (showAgeGate) return <AgeGate onConfirm={handleAgeConfirm} onDeny={handleAgeDeny}/>;
@@ -787,9 +813,9 @@ function App() {
                                 <h2 style={{fontFamily:'Syne,sans-serif',fontWeight:800,fontSize:'15px',letterSpacing:'.15em',textTransform:'uppercase',fontStyle:'italic'}}>ONYX</h2>
                             </div>
                             <div style={{display:'flex',alignItems:'center',gap:'4px'}}>
-                                {consentState?.presence && (
-                                    <div style={{display:'flex',alignItems:'center',gap:'4px',background:'rgba(74,222,128,.08)',border:'1px solid rgba(74,222,128,.2)',padding:'3px 8px',borderRadius:'8px',marginRight:'4px'}}>
-                                        <div style={{width:'6px',height:'6px',borderRadius:'50%',background:'#4ade80'}}/>
+                                {consentState?.presence && totalOnline > 0 && (
+                                    <div style={{display:'flex',alignItems:'center',gap:'5px',background:'rgba(74,222,128,.08)',border:'1px solid rgba(74,222,128,.2)',padding:'3px 8px',borderRadius:'8px',marginRight:'4px'}}>
+                                        <div style={{width:'6px',height:'6px',borderRadius:'50%',background:'#4ade80',animation:'onlinePulse 2.5s ease-in-out infinite'}}/>
                                         <span style={{fontSize:'9px',fontWeight:800,color:'#4ade80',textTransform:'uppercase',letterSpacing:'.1em'}}>{totalOnline} en ligne</span>
                                     </div>
                                 )}
@@ -835,8 +861,7 @@ function App() {
                                 {friends.length === 0 && <p style={{fontSize:'10px',color:'#334155',fontStyle:'italic',textAlign:'center',marginTop:'20px'}}>Aucun contact pour l'instant.</p>}
                                 {friends.map(f => {
                                     const fd = friendProfiles[f.uid]||{};
-                                    // FIX PRÉSENCE: lecture depuis RTDB (fiable)
-                                    const isOnline = consentState?.presence && onlineStatus[f.uid] === true;
+                                    const friendOnline = isOnline(f.uid);
                                     return (
                                         <div key={f.uid}
                                             style={{padding:'12px',borderRadius:'16px',display:'flex',alignItems:'center',gap:'12px',cursor:'pointer',marginBottom:'4px',background:activeChat?.uid===f.uid?'#2563eb':'transparent',transition:'background .2s'}}
@@ -844,23 +869,23 @@ function App() {
                                             <div style={{position:'relative',flexShrink:0}}>
                                                 <img src={fd.photoURL||getAvatar(fd.displayName)} style={{width:'44px',height:'44px',borderRadius:'12px',objectFit:'cover',background:'#1e293b'}}/>
                                                 {consentState?.presence && (
-                                                    <div style={{
-                                                        position:'absolute',bottom:'-2px',right:'-2px',
-                                                        width:'11px',height:'11px',borderRadius:'50%',
-                                                        border:'2px solid #020617',
-                                                        // FIX: vert uniquement si vraiment online selon RTDB
-                                                        background: isOnline ? '#4ade80' : '#475569',
-                                                        transition:'background .3s'
-                                                    }}/>
+                                                    <div style={{position:'absolute',bottom:'-2px',right:'-2px'}}>
+                                                        <PresenceDot isOnline={friendOnline} size={11} borderColor={activeChat?.uid===f.uid ? '#2563eb' : '#020617'}/>
+                                                    </div>
                                                 )}
                                             </div>
                                             <div style={{flex:1,minWidth:0}}>
                                                 <p style={{fontWeight:700,fontSize:'13px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{fd.displayName||'Contact'}</p>
                                                 {consentState?.presence && (
-                                                    <p style={{fontSize:'9px',fontWeight:700,textTransform:'uppercase',letterSpacing:'.06em',
-                                                        color: isOnline ? '#4ade80' : (activeChat?.uid===f.uid ? 'rgba(255,255,255,.5)' : '#475569'),
-                                                        marginTop:'2px'}}>
-                                                        {isOnline ? '● En ligne' : '○ Hors ligne'}
+                                                    <p style={{
+                                                        fontSize:'9px',fontWeight:700,textTransform:'uppercase',letterSpacing:'.06em',
+                                                        color: friendOnline
+                                                            ? '#4ade80'
+                                                            : (activeChat?.uid===f.uid ? 'rgba(255,255,255,.45)' : '#475569'),
+                                                        marginTop:'2px',
+                                                        display:'flex',alignItems:'center',gap:'4px'
+                                                    }}>
+                                                        {friendOnline ? '● En ligne' : '○ Hors ligne'}
                                                     </p>
                                                 )}
                                             </div>
@@ -879,7 +904,9 @@ function App() {
                             <div style={{padding:'12px 16px',display:'flex',alignItems:'center',gap:'10px'}}>
                                 <div style={{position:'relative'}}>
                                     <img src={profile.photoURL||getAvatar(profile.displayName)} style={{width:'36px',height:'36px',borderRadius:'10px',objectFit:'cover',background:'#2563eb'}}/>
-                                    <div style={{position:'absolute',bottom:'-2px',right:'-2px',width:'10px',height:'10px',borderRadius:'50%',background:'#4ade80',border:'2px solid #020617'}}/>
+                                    <div style={{position:'absolute',bottom:'-2px',right:'-2px'}}>
+                                        <PresenceDot isOnline={true} size={10} borderColor="#020617"/>
+                                    </div>
                                 </div>
                                 <div style={{flex:1,minWidth:0}}>
                                     <p style={{fontSize:'11px',fontWeight:800,textTransform:'uppercase',letterSpacing:'.08em',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontFamily:'Syne,sans-serif'}}>{profile.displayName}</p>
@@ -912,14 +939,20 @@ function App() {
                                         <div style={{position:'relative'}}>
                                             <img src={activeChat.photoURL||getAvatar(activeChat.displayName)} style={{width:'40px',height:'40px',borderRadius:'12px',objectFit:'cover',background:'#1e293b'}}/>
                                             {consentState?.presence && (
-                                                <div style={{position:'absolute',bottom:'-2px',right:'-2px',width:'11px',height:'11px',borderRadius:'50%',border:'2px solid #020617',background:onlineStatus[activeChat.uid]?'#4ade80':'#475569',transition:'background .3s'}}/>
+                                                <div style={{position:'absolute',bottom:'-2px',right:'-2px'}}>
+                                                    <PresenceDot isOnline={isOnline(activeChat.uid)} size={11} borderColor="#0f172a"/>
+                                                </div>
                                             )}
                                         </div>
                                         <div>
                                             <h3 style={{fontWeight:700,fontSize:'14px',lineHeight:1.2,fontFamily:'Syne,sans-serif'}}>{activeChat.displayName}</h3>
                                             {consentState?.presence && (
-                                                <p style={{fontSize:'10px',fontWeight:700,textTransform:'uppercase',letterSpacing:'.06em',color:isTypingMap[activeChat.uid]?'#3b82f6':onlineStatus[activeChat.uid]?'#4ade80':'#64748b',marginTop:'1px'}}>
-                                                    {isTypingMap[activeChat.uid] ? "En train d'écrire..." : onlineStatus[activeChat.uid] ? 'En ligne' : 'Hors ligne'}
+                                                <p style={{fontSize:'10px',fontWeight:700,textTransform:'uppercase',letterSpacing:'.06em',
+                                                    color: isTypingMap[activeChat.uid] ? '#3b82f6' : isOnline(activeChat.uid) ? '#4ade80' : '#64748b',
+                                                    marginTop:'1px'}}>
+                                                    {isTypingMap[activeChat.uid]
+                                                        ? "En train d'écrire..."
+                                                        : isOnline(activeChat.uid) ? 'En ligne' : 'Hors ligne'}
                                                 </p>
                                             )}
                                         </div>
@@ -942,7 +975,6 @@ function App() {
                                                     <div style={{maxWidth:'80%',padding:'12px 16px',borderRadius:'18px',background:isMe?'#2563eb':'rgba(15,23,42,.8)',border:isMe?'none':'1px solid #1e293b',borderTopRightRadius:isMe?'4px':'18px',borderTopLeftRadius:isMe?'18px':'4px',cursor:'pointer'}}
                                                         onClick={e=>{e.stopPropagation();setOpenMenuId(openMenuId===msg.id?null:msg.id);}}>
                                                         <p style={{fontSize:'14px',lineHeight:1.6,whiteSpace:'pre-wrap',wordBreak:'break-word'}}>
-                                                            {/* FIX MESSAGES: msg.text est directement le texte stocké, pas besoin de déchiffrement */}
                                                             {msg.text || <span style={{color:'rgba(255,255,255,.3)',fontStyle:'italic',fontSize:'12px'}}>[message vide]</span>}
                                                         </p>
                                                     </div>
